@@ -1,0 +1,1520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VendorApp – Vendor Management</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Segoe UI', system-ui, sans-serif; }
+    .fade-in { animation: fadeIn .22s ease-in; }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+    .gradient-text { background: linear-gradient(135deg,#a855f7,#ec4899); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+    .sidebar-bg { background: linear-gradient(180deg,#1e1b4b 0%,#312e81 50%,#4c1d95 100%); }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useContext, createContext, useEffect } = React;
+
+/* ── Constants ── */
+const ROLES = { ADMIN:'Admin', VENDOR:'Vendor', CUSTOMER:'Customer' };
+const STATUS = { ACTIVE:'Active', INACTIVE:'Inactive', PENDING:'Pending' };
+const OB_STATUS = { PENDING:'Pending', APPROVED:'Approved', REJECTED:'Rejected' };
+const MAX_FAILED = 5;
+
+/* ── Seed Data ── */
+const SEED_USERS = [
+  { id:1, firstName:'Alice', lastName:'Admin',    email:'admin@vendorapp.com',    phone:'9000000001', address:'1 Admin Lane, HQ City', gstNumber:'', password:'admin123',   role:ROLES.ADMIN,    status:STATUS.ACTIVE,   createdAt:'2024-01-10' },
+  { id:2, firstName:'Victor', lastName:'Vendor',  email:'vendor@vendorapp.com',   phone:'9000000002', address:'22 Vendor Street, Biz City', gstNumber:'29ABCDE1234F1Z5', password:'vendor123',  role:ROLES.VENDOR,   status:STATUS.PENDING,  createdAt:'2024-03-22' },
+  { id:3, firstName:'Charlie', lastName:'Customer',email:'customer@vendorapp.com',phone:'9000000003', address:'55 Green Park, Home City', gstNumber:'', password:'cust123',    role:ROLES.CUSTOMER, status:STATUS.ACTIVE,   createdAt:'2024-06-05' },
+];
+
+const SEED_VENDORS = [
+  {
+    id:1, userId:2,
+    businessName:"Victor's Electronics Hub", businessType:'Electronics',
+    businessAddress:'22 Vendor Street, Biz City', gstNumber:'29ABCDE1234F1Z5',
+    pocName:'Victor Vendor', pocPhone:'9000000002', pocEmail:'victor@ehub.com',
+    description:'Premium electronics and gadgets sourced directly from manufacturers.',
+    documentName:'biz_license_2024.pdf',
+    onboardingStatus:OB_STATUS.PENDING, rejectionReason:'',
+    reviewedBy:null, reviewedAt:null, submittedAt:'2024-04-01'
+  }
+];
+
+/* ── Auth Context ── */
+const AuthCtx = createContext(null);
+const useAuth = () => useContext(AuthCtx);
+
+function AuthProvider({ children }) {
+  const [users, setUsers]           = useState(SEED_USERS);
+  const [vendors, setVendors]       = useState(SEED_VENDORS);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [lockouts, setLockouts]     = useState({}); // email -> { count, lockedUntil }
+  const [page, setPage]             = useState('login'); // global navigation
+
+  const avatar = (u) => ((u.firstName?.[0]||'') + (u.lastName?.[0]||'')).toUpperCase();
+  const fullName = (u) => `${u.firstName} ${u.lastName}`;
+
+  const login = (email, password) => {
+    const lo = lockouts[email];
+    if (lo?.lockedUntil && Date.now() < lo.lockedUntil) {
+      const mins = Math.ceil((lo.lockedUntil - Date.now()) / 60000);
+      return { ok:false, error:`Account locked. Try again in ${mins} minute(s).` };
+    }
+    const user = users.find(u => u.email === email && u.password === password);
+    if (!user) {
+      const count = (lo?.count || 0) + 1;
+      const lockedUntil = count >= MAX_FAILED ? Date.now() + 15 * 60000 : null;
+      setLockouts(prev => ({ ...prev, [email]: { count, lockedUntil } }));
+      const remaining = MAX_FAILED - count;
+      return { ok:false, error: count >= MAX_FAILED
+        ? 'Account locked for 15 minutes after 5 failed attempts.'
+        : `Invalid credentials. ${remaining} attempt(s) remaining.` };
+    }
+    setLockouts(prev => { const n={...prev}; delete n[email]; return n; });
+    setCurrentUser(user);
+    return { ok:true };
+  };
+
+  const logout = () => { setCurrentUser(null); setPage('login'); };
+
+  const register = (data) => {
+    if (users.find(u => u.email === data.email))
+      return { ok:false, error:'Email already registered.' };
+    const newUser = {
+      ...data, id: Date.now(),
+      status: data.role === ROLES.VENDOR ? STATUS.PENDING : STATUS.ACTIVE,
+      createdAt: new Date().toISOString().slice(0,10)
+    };
+    setUsers(prev => [...prev, newUser]);
+    return { ok:true };
+  };
+
+  const updateUser = (id, data) => {
+    setUsers(prev => prev.map(u => u.id===id ? { ...u, ...data } : u));
+    if (currentUser?.id === id) setCurrentUser(prev => ({ ...prev, ...data }));
+  };
+
+  const deleteUser = (id) => setUsers(prev => prev.filter(u => u.id !== id));
+  const toggleStatus = (id) => setUsers(prev => prev.map(u => u.id===id
+    ? { ...u, status: u.status===STATUS.ACTIVE ? STATUS.INACTIVE : STATUS.ACTIVE } : u));
+  const addAdminUser = (data) => {
+    if (users.find(u => u.email === data.email)) return { ok:false, error:'Email exists.' };
+    setUsers(prev => [...prev, { ...data, id:Date.now(), role:ROLES.ADMIN, status:STATUS.ACTIVE, createdAt:new Date().toISOString().slice(0,10) }]);
+    return { ok:true };
+  };
+
+  const submitOnboarding = (data) => {
+    const existing = vendors.find(v => v.userId === currentUser.id);
+    if (existing) {
+      setVendors(prev => prev.map(v => v.userId===currentUser.id
+        ? { ...v, ...data, onboardingStatus:OB_STATUS.PENDING, rejectionReason:'', reviewedBy:null, reviewedAt:null, submittedAt:new Date().toISOString().slice(0,10) } : v));
+    } else {
+      setVendors(prev => [...prev, { ...data, id:Date.now(), userId:currentUser.id,
+        onboardingStatus:OB_STATUS.PENDING, rejectionReason:'', reviewedBy:null, reviewedAt:null,
+        submittedAt:new Date().toISOString().slice(0,10) }]);
+    }
+  };
+
+  const approveVendor = (vendorId) => {
+    setVendors(prev => prev.map(v => v.id===vendorId
+      ? { ...v, onboardingStatus:OB_STATUS.APPROVED, reviewedBy:currentUser.id, reviewedAt:new Date().toISOString().slice(0,10) } : v));
+    const vp = vendors.find(v => v.id===vendorId);
+    if (vp) setUsers(prev => prev.map(u => u.id===vp.userId ? { ...u, status:STATUS.ACTIVE } : u));
+  };
+
+  const rejectVendor = (vendorId, reason) => {
+    setVendors(prev => prev.map(v => v.id===vendorId
+      ? { ...v, onboardingStatus:OB_STATUS.REJECTED, rejectionReason:reason, reviewedBy:currentUser.id, reviewedAt:new Date().toISOString().slice(0,10) } : v));
+  };
+
+  return (
+    <AuthCtx.Provider value={{ currentUser, users, vendors, page, setPage,
+      login, logout, register, updateUser, deleteUser, toggleStatus, addAdminUser,
+      submitOnboarding, approveVendor, rejectVendor, avatar, fullName }}>
+      {children}
+    </AuthCtx.Provider>
+  );
+}
+
+/* ── UI Primitives ── */
+const ROLE_CHIP = {
+  Admin:    'bg-purple-100 text-purple-700 border border-purple-200',
+  Vendor:   'bg-blue-100   text-blue-700   border border-blue-200',
+  Customer: 'bg-pink-100   text-pink-700   border border-pink-200',
+};
+const STATUS_CHIP = {
+  Active:   'bg-emerald-100 text-emerald-700',
+  Inactive: 'bg-gray-100    text-gray-500',
+  Pending:  'bg-amber-100   text-amber-700',
+  Approved: 'bg-emerald-100 text-emerald-700',
+  Rejected: 'bg-red-100     text-red-600',
+};
+const AVATAR_BG = {
+  Admin:    'bg-gradient-to-br from-purple-500 to-violet-700',
+  Vendor:   'bg-gradient-to-br from-blue-500   to-cyan-600',
+  Customer: 'bg-gradient-to-br from-pink-500   to-rose-600',
+};
+
+function RoleBadge({ role }) {
+  return <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${ROLE_CHIP[role]||'bg-gray-100 text-gray-600'}`}>{role}</span>;
+}
+function StatusBadge({ status }) {
+  return <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${STATUS_CHIP[status]||'bg-gray-100 text-gray-500'}`}>{status}</span>;
+}
+function UserAvatar({ user, size='md' }) {
+  const sz = { sm:'w-7 h-7 text-xs', md:'w-9 h-9 text-sm', lg:'w-12 h-12 text-base', xl:'w-16 h-16 text-xl' }[size];
+  const { avatar } = useAuth();
+  return (
+    <div className={`${sz} rounded-full ${AVATAR_BG[user.role]||'bg-gray-400'} text-white font-bold flex items-center justify-center flex-shrink-0`}>
+      {avatar(user)}
+    </div>
+  );
+}
+
+function Toast({ msg, type='success' }) {
+  if (!msg) return null;
+  const c = { success:'bg-emerald-500', error:'bg-red-500', info:'bg-violet-500', warn:'bg-amber-500' }[type];
+  const ic = { success:'✅', error:'❌', info:'ℹ️', warn:'⚠️' }[type];
+  return (
+    <div className={`fixed top-4 right-4 z-[9999] ${c} text-white text-sm font-semibold px-4 py-3 rounded-2xl shadow-xl fade-in flex items-center gap-2 max-w-sm`}>
+      {ic} {msg}
+    </div>
+  );
+}
+function useToast() {
+  const [t, setT] = useState({ msg:'', type:'success' });
+  const show = (msg, type='success') => { setT({ msg, type }); setTimeout(()=>setT({ msg:'',type:'success' }),3500); };
+  return [t, show];
+}
+
+function Modal({ title, onClose, children, wide }) {
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${wide?'max-w-2xl':'max-w-md'} max-h-[90vh] overflow-y-auto fade-in`} onClick={e=>e.stopPropagation()}>
+        <div className="sticky top-0 bg-white px-6 py-4 border-b border-gray-100 rounded-t-2xl flex items-center justify-between">
+          <h3 className="text-lg font-bold text-gray-800">{title}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-2xl leading-none font-light">×</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* ── Form Field Helper ── */
+function Field({ label, error, children }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      {children}
+      {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
+    </div>
+  );
+}
+function Input({ error, ...props }) {
+  return <input {...props} className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 transition ${error?'border-red-400 bg-red-50':'border-gray-300'} ${props.disabled?'bg-gray-50 text-gray-500':''} ${props.className||''}`} />;
+}
+function Textarea({ error, ...props }) {
+  return <textarea {...props} className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none transition ${error?'border-red-400 bg-red-50':'border-gray-300'} ${props.className||''}`} />;
+}
+function Select({ error, children, ...props }) {
+  return (
+    <select {...props} className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white transition ${error?'border-red-400':'border-gray-300'}`}>
+      {children}
+    </select>
+  );
+}
+
+/* ── Stat Card ── */
+function StatCard({ label, value, icon, gradient }) {
+  return (
+    <div className={`rounded-2xl p-5 text-white shadow-lg ${gradient}`}>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide opacity-80">{label}</p>
+          <p className="text-3xl font-extrabold mt-1">{value}</p>
+        </div>
+        <span className="text-4xl opacity-80">{icon}</span>
+      </div>
+    </div>
+  );
+}
+
+/* ── Password Validator ── */
+function validatePassword(pw) {
+  const errs = [];
+  if (pw.length < 8)              errs.push('At least 8 characters');
+  if (!/[A-Z]/.test(pw))          errs.push('At least 1 uppercase letter');
+  if (!/[0-9]/.test(pw))          errs.push('At least 1 number');
+  if (!/[^A-Za-z0-9]/.test(pw))   errs.push('At least 1 special character');
+  return errs;
+}
+
+/* ════════════════════════════════════════
+   LOGIN PAGE
+════════════════════════════════════════ */
+function LoginPage() {
+  const { login, setPage } = useAuth();
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError]       = useState('');
+  const [loading, setLoading]   = useState(false);
+
+  const QUICK = [
+    { label:'Admin',    email:'admin@vendorapp.com',    password:'admin123',  g:'from-purple-600 to-violet-700', icon:'🛡️' },
+    { label:'Vendor',   email:'vendor@vendorapp.com',   password:'vendor123', g:'from-blue-500   to-cyan-600',   icon:'🏪' },
+    { label:'Customer', email:'customer@vendorapp.com', password:'cust123',   g:'from-pink-500   to-rose-600',   icon:'👤' },
+  ];
+
+  const doLogin = (em, pw) => {
+    setLoading(true); setError('');
+    setTimeout(() => {
+      const res = login(em, pw);
+      if (!res.ok) setError(res.error);
+      setLoading(false);
+    }, 280);
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-violet-900 via-fuchsia-800 to-pink-900 flex items-center justify-center p-4 relative overflow-hidden">
+      <div className="absolute top-0 left-0 w-96 h-96 bg-purple-600 rounded-full blur-3xl opacity-20 -translate-x-1/2 -translate-y-1/2" />
+      <div className="absolute bottom-0 right-0 w-96 h-96 bg-pink-500 rounded-full blur-3xl opacity-20 translate-x-1/2 translate-y-1/2" />
+
+      <div className="w-full max-w-md relative z-10 fade-in">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="inline-flex w-20 h-20 bg-gradient-to-br from-pink-500 to-violet-600 rounded-3xl shadow-2xl items-center justify-center mb-4">
+            <span className="text-4xl">🏪</span>
+          </div>
+          <h1 className="text-4xl font-extrabold text-white">VendorApp</h1>
+          <p className="text-fuchsia-200 text-sm mt-1">Vendor Management Platform</p>
+        </div>
+
+        <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-3xl p-8 shadow-2xl">
+          <h2 className="text-xl font-bold text-white mb-5">Sign In</h2>
+
+          {error && (
+            <div className="mb-4 p-3 bg-red-500/20 border border-red-400/40 rounded-xl text-red-200 text-sm flex gap-2">
+              <span>⚠️</span><span>{error}</span>
+            </div>
+          )}
+
+          <form onSubmit={e=>{ e.preventDefault(); doLogin(email,password); }} className="space-y-4">
+            <Field label={<span className="text-fuchsia-100">Email Address</span>}>
+              <input type="email" value={email} onChange={e=>setEmail(e.target.value)} required placeholder="you@example.com"
+                className="w-full px-3 py-2.5 bg-white/10 border border-white/20 rounded-xl text-white placeholder-fuchsia-300 text-sm focus:outline-none focus:ring-2 focus:ring-pink-400 transition" />
+            </Field>
+            <Field label={<span className="text-fuchsia-100">Password</span>}>
+              <input type="password" value={password} onChange={e=>setPassword(e.target.value)} required placeholder="••••••••"
+                className="w-full px-3 py-2.5 bg-white/10 border border-white/20 rounded-xl text-white placeholder-fuchsia-300 text-sm focus:outline-none focus:ring-2 focus:ring-pink-400 transition" />
+            </Field>
+            <div className="flex items-center justify-between text-sm">
+              <label className="flex items-center gap-2 text-fuchsia-200 cursor-pointer">
+                <input type="checkbox" className="rounded" /> Remember me
+              </label>
+              <button type="button" onClick={()=>setPage('forgot')} className="text-pink-300 hover:text-pink-100 font-medium transition">Forgot Password?</button>
+            </div>
+            <button type="submit" disabled={loading}
+              className="w-full py-3 bg-gradient-to-r from-pink-500 to-violet-600 hover:opacity-90 disabled:opacity-50 text-white font-bold rounded-xl transition shadow-lg">
+              {loading ? 'Signing in…' : 'Sign In →'}
+            </button>
+          </form>
+
+          {/* Quick login */}
+          <div className="mt-6">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex-1 border-t border-white/20" />
+              <span className="text-xs text-fuchsia-300">Quick Login</span>
+              <div className="flex-1 border-t border-white/20" />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {QUICK.map(q => (
+                <button key={q.label} onClick={()=>doLogin(q.email,q.password)}
+                  className={`bg-gradient-to-br ${q.g} text-white text-xs font-bold py-3 rounded-xl hover:scale-105 transition flex flex-col items-center gap-1 shadow-md`}>
+                  <span className="text-lg">{q.icon}</span>{q.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Credentials hint */}
+          <div className="mt-5 p-3 bg-white/5 border border-white/10 rounded-xl">
+            <p className="text-xs text-fuchsia-300 font-semibold mb-1">Demo Credentials</p>
+            <div className="text-xs text-fuchsia-400 font-mono space-y-0.5">
+              <p>admin@vendorapp.com / admin123</p>
+              <p>vendor@vendorapp.com / vendor123</p>
+              <p>customer@vendorapp.com / cust123</p>
+            </div>
+          </div>
+
+          <p className="mt-5 text-center text-sm text-fuchsia-200">
+            New user?{' '}
+            <button onClick={()=>setPage('register')} className="text-pink-300 hover:text-white font-bold transition">Create Account</button>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   REGISTER PAGE
+════════════════════════════════════════ */
+function RegisterPage() {
+  const { register, setPage } = useAuth();
+  const [form, setForm] = useState({
+    firstName:'', lastName:'', phone:'', address:'', gstNumber:'',
+    email:'', password:'', confirmPassword:'', role:ROLES.VENDOR
+  });
+  const [errors, setErrors] = useState({});
+  const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const set = (k,v) => setForm(p=>({...p,[k]:v}));
+
+  const validate = () => {
+    const e = {};
+    if (!form.firstName.trim() || !/^[A-Za-z ]{1,50}$/.test(form.firstName)) e.firstName = 'Alpha characters only, max 50';
+    if (!form.lastName.trim()  || !/^[A-Za-z ]{1,50}$/.test(form.lastName))  e.lastName  = 'Alpha characters only, max 50';
+    if (!form.phone.trim()     || !/^\+?[0-9]{10,15}$/.test(form.phone))     e.phone     = '10-digit phone number (with optional country code)';
+    if (!form.address.trim()   || form.address.trim().length < 10)            e.address   = 'Min 10 characters required';
+    if (!form.email.trim()     || !/\S+@\S+\.\S+/.test(form.email))          e.email     = 'Valid email required';
+    if (form.gstNumber && !/^[0-9A-Z]{15}$/.test(form.gstNumber.toUpperCase())) e.gstNumber = '15-character alphanumeric GST format';
+    const pwErrs = validatePassword(form.password);
+    if (pwErrs.length) e.password = pwErrs.join(' · ');
+    if (form.password !== form.confirmPassword) e.confirmPassword = 'Passwords do not match';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!validate()) return;
+    setLoading(true);
+    setTimeout(() => {
+      const res = register({ ...form, gstNumber: form.gstNumber.toUpperCase() });
+      if (!res.ok) { setErrors({ email: res.error }); setLoading(false); return; }
+      setSuccess(true);
+      setLoading(false);
+    }, 300);
+  };
+
+  if (success) return (
+    <div className="min-h-screen bg-gradient-to-br from-violet-900 via-fuchsia-800 to-pink-900 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl p-10 text-center max-w-sm w-full shadow-2xl fade-in">
+        <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4 text-4xl">✅</div>
+        <h2 className="text-2xl font-extrabold text-gray-800 mb-2">Account Created!</h2>
+        <p className="text-gray-500 text-sm mb-1">
+          {form.role === ROLES.VENDOR
+            ? 'Your vendor account is pending admin activation. Please log in to complete your onboarding.'
+            : 'Your customer account is ready. You can now sign in.'}
+        </p>
+        <button onClick={()=>setPage('login')} className="mt-6 w-full py-3 bg-gradient-to-r from-violet-600 to-purple-700 text-white font-bold rounded-xl hover:opacity-90 transition">
+          Go to Login →
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-violet-900 via-fuchsia-800 to-pink-900 flex items-center justify-center p-4 relative overflow-hidden">
+      <div className="absolute top-0 left-0 w-96 h-96 bg-purple-600 rounded-full blur-3xl opacity-20 -translate-x-1/2 -translate-y-1/2" />
+      <div className="w-full max-w-2xl relative z-10 fade-in">
+        <div className="text-center mb-6">
+          <div className="inline-flex w-16 h-16 bg-gradient-to-br from-pink-500 to-violet-600 rounded-2xl shadow-2xl items-center justify-center mb-3">
+            <span className="text-3xl">🏪</span>
+          </div>
+          <h1 className="text-3xl font-extrabold text-white">Create Account</h1>
+          <p className="text-fuchsia-200 text-sm mt-1">Join VendorApp as a Vendor or Customer</p>
+        </div>
+
+        <div className="bg-white rounded-3xl p-8 shadow-2xl">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="First Name *" error={errors.firstName}>
+                <Input value={form.firstName} onChange={e=>set('firstName',e.target.value)} placeholder="John" error={errors.firstName} />
+              </Field>
+              <Field label="Last Name *" error={errors.lastName}>
+                <Input value={form.lastName} onChange={e=>set('lastName',e.target.value)} placeholder="Doe" error={errors.lastName} />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Phone Number *" error={errors.phone}>
+                <Input value={form.phone} onChange={e=>set('phone',e.target.value)} placeholder="+91 9876543210" error={errors.phone} />
+              </Field>
+              <Field label="GST Number (Optional)" error={errors.gstNumber}>
+                <Input value={form.gstNumber} onChange={e=>set('gstNumber',e.target.value)} placeholder="29ABCDE1234F1Z5" maxLength={15} error={errors.gstNumber} />
+              </Field>
+            </div>
+            <Field label="Address *" error={errors.address}>
+              <Textarea value={form.address} onChange={e=>set('address',e.target.value)} placeholder="Full address (min 10 characters)" rows={2} error={errors.address} />
+            </Field>
+            <Field label="Email Address *" error={errors.email}>
+              <Input type="email" value={form.email} onChange={e=>set('email',e.target.value)} placeholder="you@example.com" error={errors.email} />
+            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Password *" error={errors.password}>
+                <Input type="password" value={form.password} onChange={e=>set('password',e.target.value)} placeholder="Min 8 chars" error={errors.password} />
+              </Field>
+              <Field label="Confirm Password *" error={errors.confirmPassword}>
+                <Input type="password" value={form.confirmPassword} onChange={e=>set('confirmPassword',e.target.value)} placeholder="Re-enter password" error={errors.confirmPassword} />
+              </Field>
+            </div>
+            <div className="p-3 bg-violet-50 border border-violet-100 rounded-xl text-xs text-violet-600">
+              Password must: be 8+ chars · have 1 uppercase · have 1 number · have 1 special character
+            </div>
+            <Field label="Register As *">
+              <div className="grid grid-cols-2 gap-3">
+                {[ROLES.VENDOR, ROLES.CUSTOMER].map(r => (
+                  <button type="button" key={r} onClick={()=>set('role',r)}
+                    className={`py-3 rounded-xl text-sm font-bold border-2 transition ${form.role===r?'border-violet-600 bg-violet-600 text-white':'border-gray-200 text-gray-600 hover:border-violet-300'}`}>
+                    {r === ROLES.VENDOR ? '🏪 Vendor' : '👤 Customer'}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            <button type="submit" disabled={loading}
+              className="w-full py-3 bg-gradient-to-r from-violet-600 to-purple-700 hover:opacity-90 disabled:opacity-50 text-white font-bold rounded-xl transition shadow-md">
+              {loading ? 'Creating Account…' : 'Create Account →'}
+            </button>
+          </form>
+          <p className="mt-5 text-center text-sm text-gray-500">
+            Already have an account?{' '}
+            <button onClick={()=>setPage('login')} className="text-violet-600 hover:text-violet-800 font-bold transition">Sign In</button>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   FORGOT PASSWORD PAGE
+════════════════════════════════════════ */
+function ForgotPasswordPage() {
+  const { setPage } = useAuth();
+  const [email, setEmail] = useState('');
+  const [sent, setSent] = useState(false);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-violet-900 via-fuchsia-800 to-pink-900 flex items-center justify-center p-4">
+      <div className="w-full max-w-sm fade-in">
+        <div className="bg-white rounded-3xl p-8 shadow-2xl">
+          <div className="text-center mb-6">
+            <div className="w-16 h-16 bg-violet-100 rounded-2xl flex items-center justify-center mx-auto mb-3 text-3xl">🔑</div>
+            <h2 className="text-2xl font-extrabold text-gray-800">Forgot Password?</h2>
+            <p className="text-gray-500 text-sm mt-1">Enter your email and we'll send a reset link.</p>
+          </div>
+          {sent ? (
+            <div className="text-center">
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 text-sm mb-5">
+                ✅ Reset link sent to <strong>{email}</strong>. Check your inbox.
+              </div>
+              <button onClick={()=>setPage('login')} className="w-full py-3 bg-gradient-to-r from-violet-600 to-purple-700 text-white font-bold rounded-xl hover:opacity-90 transition">Back to Login</button>
+            </div>
+          ) : (
+            <>
+              <Field label="Email Address">
+                <Input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" />
+              </Field>
+              <button onClick={()=>setSent(true)} disabled={!email}
+                className="w-full mt-4 py-3 bg-gradient-to-r from-violet-600 to-purple-700 text-white font-bold rounded-xl hover:opacity-90 disabled:opacity-50 transition">
+                Send Reset Link
+              </button>
+              <button onClick={()=>setPage('login')} className="w-full mt-3 py-2.5 text-sm text-gray-600 hover:text-gray-800 transition">← Back to Login</button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   SIDEBAR
+════════════════════════════════════════ */
+function Sidebar({ activePage, setActivePage }) {
+  const { currentUser, logout, vendors, fullName } = useAuth();
+  const pendingCount = vendors.filter(v => v.onboardingStatus === OB_STATUS.PENDING).length;
+
+  const NAV = {
+    Admin: [
+      { id:'dashboard',  label:'Dashboard',          icon:'🏠' },
+      { id:'vendors',    label:'Vendor Applications', icon:'🔔', badge: pendingCount },
+      { id:'users',      label:'User Management',     icon:'👥' },
+      { id:'profile',    label:'My Profile',          icon:'👤' },
+    ],
+    Vendor: [
+      { id:'dashboard',   label:'Dashboard',    icon:'🏠' },
+      { id:'onboarding',  label:'My Onboarding',icon:'📋' },
+      { id:'profile',     label:'My Profile',   icon:'👤' },
+    ],
+    Customer: [
+      { id:'dashboard',  label:'Dashboard',      icon:'🏠' },
+      { id:'browse',     label:'Browse Vendors', icon:'🛍️' },
+      { id:'profile',    label:'My Profile',     icon:'👤' },
+    ],
+  };
+
+  const items = NAV[currentUser?.role] || [];
+
+  return (
+    <aside className="w-64 min-h-screen sidebar-bg flex flex-col flex-shrink-0">
+      {/* Logo */}
+      <div className="px-5 py-5 border-b border-white/10">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-gradient-to-br from-pink-500 to-violet-600 rounded-2xl flex items-center justify-center shadow-lg text-xl">🏪</div>
+          <div>
+            <p className="text-white font-extrabold text-sm">VendorApp</p>
+            <p className="text-violet-300 text-xs">Management Platform</p>
+          </div>
+        </div>
+      </div>
+
+      {/* User card */}
+      <div className="px-4 py-4 border-b border-white/10">
+        <div className="flex items-center gap-3 bg-white/10 rounded-2xl p-3">
+          <UserAvatar user={currentUser} size="md" />
+          <div className="min-w-0">
+            <p className="text-white text-sm font-semibold truncate">{fullName(currentUser)}</p>
+            <RoleBadge role={currentUser?.role} />
+          </div>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 p-3 space-y-1">
+        {items.map(item => (
+          <button key={item.id} onClick={()=>setActivePage(item.id)}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
+              activePage===item.id
+                ? 'bg-gradient-to-r from-pink-500/80 to-violet-500/80 text-white shadow-lg'
+                : 'text-violet-200 hover:bg-white/10 hover:text-white'
+            }`}>
+            <span>{item.icon}</span>
+            <span className="flex-1 text-left">{item.label}</span>
+            {item.badge > 0 && (
+              <span className="bg-pink-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">{item.badge}</span>
+            )}
+          </button>
+        ))}
+      </nav>
+
+      <div className="p-3 border-t border-white/10">
+        <button onClick={logout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-violet-300 hover:bg-white/10 hover:text-red-300 transition">
+          <span>🚪</span> Sign Out
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+/* ── Page Header ── */
+function PageHeader({ title, subtitle, action }) {
+  const { currentUser } = useAuth();
+  return (
+    <div className="flex items-center justify-between mb-6">
+      <div>
+        <h1 className="text-2xl font-extrabold gradient-text">{title}</h1>
+        {subtitle && <p className="text-gray-500 text-sm mt-0.5">{subtitle}</p>}
+      </div>
+      <div className="flex items-center gap-3">
+        {action}
+        <span className="text-sm text-gray-400 hidden sm:block">{new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</span>
+        <UserAvatar user={currentUser} size="md" />
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   ADMIN DASHBOARD
+════════════════════════════════════════ */
+function AdminDashboard({ setActivePage }) {
+  const { users, vendors, fullName } = useAuth();
+  const pending = vendors.filter(v=>v.onboardingStatus===OB_STATUS.PENDING);
+
+  const stats = [
+    { label:'Total Users',       value: users.length,                                     icon:'👥', gradient:'bg-gradient-to-br from-violet-500 to-purple-700' },
+    { label:'Vendors',           value: users.filter(u=>u.role===ROLES.VENDOR).length,    icon:'🏪', gradient:'bg-gradient-to-br from-blue-500   to-cyan-600' },
+    { label:'Customers',         value: users.filter(u=>u.role===ROLES.CUSTOMER).length,  icon:'👤', gradient:'bg-gradient-to-br from-pink-500   to-rose-600' },
+    { label:'Pending Approvals', value: pending.length,                                   icon:'🔔', gradient:'bg-gradient-to-br from-amber-500  to-orange-600' },
+  ];
+
+  return (
+    <div className="fade-in space-y-6">
+      <PageHeader title="Admin Dashboard" subtitle="Platform overview and quick actions" />
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {stats.map(s=><StatCard key={s.label} {...s} />)}
+      </div>
+
+      {/* Role breakdown */}
+      <div className="grid grid-cols-3 gap-4">
+        {[
+          { role:ROLES.ADMIN,    icon:'🛡️', g:'from-purple-500 to-violet-600' },
+          { role:ROLES.VENDOR,   icon:'🏪', g:'from-blue-500   to-cyan-600' },
+          { role:ROLES.CUSTOMER, icon:'👤', g:'from-pink-500   to-rose-600' },
+        ].map(r => (
+          <div key={r.role} className={`bg-gradient-to-br ${r.g} rounded-2xl p-4 text-white shadow-md`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs opacity-80 font-semibold">{r.role}s</p>
+                <p className="text-3xl font-extrabold">{users.filter(u=>u.role===r.role).length}</p>
+              </div>
+              <span className="text-3xl opacity-80">{r.icon}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Pending vendor applications */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-gray-800 flex items-center gap-2">
+            🔔 Pending Vendor Applications
+            {pending.length > 0 && <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full">{pending.length}</span>}
+          </h3>
+          <button onClick={()=>setActivePage('vendors')} className="text-xs text-violet-600 font-semibold hover:underline">View All →</button>
+        </div>
+        {pending.length === 0 ? (
+          <p className="text-gray-400 text-sm text-center py-4">No pending applications.</p>
+        ) : pending.map(v => {
+          const u = users.find(x=>x.id===v.userId);
+          return (
+            <div key={v.id} className="flex items-center gap-3 py-3 border-b border-gray-50 last:border-0">
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-cyan-500 rounded-xl flex items-center justify-center text-white font-bold text-lg flex-shrink-0">{v.businessName[0]}</div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-gray-800 text-sm truncate">{v.businessName}</p>
+                <p className="text-xs text-gray-400">{u ? fullName(u) : '—'} · {v.submittedAt}</p>
+              </div>
+              <StatusBadge status={v.onboardingStatus} />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* User status overview */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+        <h3 className="font-bold text-gray-800 mb-4">User Status Overview</h3>
+        <div className="grid grid-cols-3 gap-3">
+          {['Active','Inactive','Pending'].map(s => (
+            <div key={s} className="bg-gray-50 rounded-xl p-4 text-center border border-gray-100">
+              <p className="text-2xl font-extrabold text-gray-800">{users.filter(u=>u.status===s).length}</p>
+              <StatusBadge status={s} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   ADMIN — VENDOR APPLICATIONS
+════════════════════════════════════════ */
+function AdminVendorsPage() {
+  const { users, vendors, approveVendor, rejectVendor, fullName } = useAuth();
+  const [filter, setFilter]     = useState('All');
+  const [reviewing, setReviewing] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectErr, setRejectErr] = useState('');
+  const [toast, showToast] = useToast();
+
+  const displayed = vendors.filter(v => filter==='All' || v.onboardingStatus===filter);
+
+  const handleApprove = () => {
+    approveVendor(reviewing.id);
+    showToast(`${reviewing.businessName} approved! ✅`);
+    setReviewing(null);
+  };
+  const handleReject = () => {
+    if (!rejectReason.trim()) { setRejectErr('Rejection reason is required.'); return; }
+    rejectVendor(reviewing.id, rejectReason.trim());
+    showToast(`Application rejected.`, 'warn');
+    setReviewing(null); setRejectReason(''); setRejectErr('');
+  };
+
+  return (
+    <div className="fade-in">
+      <Toast {...toast} />
+      <PageHeader title="Vendor Applications" subtitle={`${vendors.filter(v=>v.onboardingStatus===OB_STATUS.PENDING).length} pending review`} />
+
+      {/* Filter tabs */}
+      <div className="flex gap-2 mb-6 flex-wrap">
+        {['All','Pending','Approved','Rejected'].map(f => (
+          <button key={f} onClick={()=>setFilter(f)}
+            className={`px-4 py-2 text-sm font-bold rounded-xl transition ${filter===f?'bg-gradient-to-r from-violet-600 to-purple-700 text-white shadow-md':'bg-white border border-gray-200 text-gray-600 hover:bg-violet-50'}`}>
+            {f} <span className="ml-1 opacity-70 text-xs">({f==='All'?vendors.length:vendors.filter(v=>v.onboardingStatus===f).length})</span>
+          </button>
+        ))}
+      </div>
+
+      {displayed.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-100 p-16 text-center shadow-sm">
+          <p className="text-5xl mb-3">📭</p>
+          <p className="text-gray-400 text-sm">No {filter !== 'All' ? filter.toLowerCase() : ''} applications found.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {displayed.map(v => {
+            const u = users.find(x=>x.id===v.userId);
+            return (
+              <div key={v.id} className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition flex items-center gap-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-cyan-500 rounded-2xl flex items-center justify-center text-white font-extrabold text-xl shadow flex-shrink-0">{v.businessName[0]}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-bold text-gray-800">{v.businessName}</p>
+                    <StatusBadge status={v.onboardingStatus} />
+                    <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{v.businessType}</span>
+                  </div>
+                  <p className="text-sm text-gray-500 mt-0.5">{u ? fullName(u) : '—'} · {v.pocEmail}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">📍 {v.businessAddress} · Submitted {v.submittedAt}</p>
+                  {v.rejectionReason && <p className="text-xs text-red-500 mt-1 italic">Rejected: "{v.rejectionReason}"</p>}
+                </div>
+                {v.onboardingStatus === OB_STATUS.PENDING && (
+                  <button onClick={()=>{ setReviewing(v); setRejectReason(''); setRejectErr(''); }}
+                    className="px-4 py-2 bg-gradient-to-r from-violet-600 to-purple-700 text-white text-sm font-bold rounded-xl hover:opacity-90 transition shadow-md flex-shrink-0">
+                    Review
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Review Modal */}
+      {reviewing && (
+        <Modal title="Review Vendor Application" onClose={()=>setReviewing(null)} wide>
+          <div className="p-6 space-y-4">
+            <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-2xl p-4 border border-violet-100">
+              <h4 className="font-extrabold text-gray-800 text-lg">{reviewing.businessName}</h4>
+              <p className="text-sm text-gray-500 mt-0.5">{reviewing.businessType} · Submitted {reviewing.submittedAt}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                ['POC Name',   reviewing.pocName],
+                ['POC Phone',  reviewing.pocPhone],
+                ['POC Email',  reviewing.pocEmail],
+                ['GST Number', reviewing.gstNumber || '—'],
+                ['Document',   reviewing.documentName || '—'],
+              ].map(([k,v]) => (
+                <div key={k} className="bg-gray-50 rounded-xl p-3">
+                  <p className="text-xs text-gray-400 font-medium">{k}</p>
+                  <p className="text-sm text-gray-700 font-semibold mt-0.5 break-all">{v}</p>
+                </div>
+              ))}
+              <div className="col-span-2 bg-gray-50 rounded-xl p-3">
+                <p className="text-xs text-gray-400 font-medium">Business Address</p>
+                <p className="text-sm text-gray-700 font-semibold mt-0.5">{reviewing.businessAddress}</p>
+              </div>
+            </div>
+            {reviewing.description && (
+              <div>
+                <p className="text-xs text-gray-400 font-medium mb-1">Description</p>
+                <p className="text-sm text-gray-700 bg-gray-50 rounded-xl p-3">{reviewing.description}</p>
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Rejection Reason <span className="text-gray-400">(required if rejecting)</span></label>
+              <Textarea value={rejectReason} onChange={e=>{ setRejectReason(e.target.value); setRejectErr(''); }} rows={3}
+                placeholder="Explain why the application is being rejected…" error={rejectErr} />
+              {rejectErr && <p className="text-red-500 text-xs mt-1">{rejectErr}</p>}
+            </div>
+          </div>
+          <div className="px-6 pb-6 flex gap-3">
+            <button onClick={()=>setReviewing(null)} className="flex-1 py-2.5 text-sm font-semibold text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-50 transition">Cancel</button>
+            <button onClick={handleReject} className="flex-1 py-2.5 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-xl transition">❌ Reject</button>
+            <button onClick={handleApprove} className="flex-1 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:opacity-90 rounded-xl transition">✅ Approve</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   ADMIN — USER MANAGEMENT
+════════════════════════════════════════ */
+function AdminUsersPage() {
+  const { users, updateUser, deleteUser, toggleStatus, addAdminUser, fullName } = useAuth();
+  const [search, setSearch]         = useState('');
+  const [roleFilter, setRoleFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [modal, setModal]           = useState(null); // null | 'edit' | 'delete' | 'addAdmin'
+  const [target, setTarget]         = useState(null);
+  const [adminForm, setAdminForm]   = useState({ firstName:'', lastName:'', email:'', password:'', phone:'', address:'' });
+  const [adminErrs, setAdminErrs]   = useState({});
+  const [toast, showToast]          = useToast();
+  const { currentUser }             = useAuth();
+
+  const filtered = users.filter(u => {
+    const q = search.toLowerCase();
+    const matchQ = fullName(u).toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+    const matchR = roleFilter==='All' || u.role===roleFilter;
+    const matchS = statusFilter==='All' || u.status===statusFilter;
+    return matchQ && matchR && matchS;
+  });
+
+  const openEdit  = (u) => { setTarget({...u}); setModal('edit'); };
+  const openDel   = (u) => { setTarget(u); setModal('delete'); };
+
+  const handleEditSave = () => {
+    updateUser(target.id, { firstName:target.firstName, lastName:target.lastName, phone:target.phone, address:target.address, status:target.status });
+    showToast('User updated!');
+    setModal(null);
+  };
+
+  const handleDelete = () => {
+    deleteUser(target.id);
+    showToast('User removed.','info');
+    setModal(null);
+  };
+
+  const handleAddAdmin = () => {
+    const e = {};
+    if (!adminForm.firstName.trim()) e.firstName = 'Required';
+    if (!adminForm.lastName.trim())  e.lastName  = 'Required';
+    if (!/\S+@\S+\.\S+/.test(adminForm.email)) e.email = 'Valid email required';
+    if (!adminForm.phone.trim()) e.phone = 'Required';
+    if (!adminForm.address.trim() || adminForm.address.trim().length < 10) e.address = 'Min 10 chars';
+    const pwErrs = validatePassword(adminForm.password);
+    if (pwErrs.length) e.password = 'Weak password';
+    setAdminErrs(e);
+    if (Object.keys(e).length) return;
+    const res = addAdminUser(adminForm);
+    if (!res.ok) { setAdminErrs({ email: res.error }); return; }
+    showToast('Admin user created!');
+    setModal(null);
+    setAdminForm({ firstName:'', lastName:'', email:'', password:'', phone:'', address:'' });
+  };
+
+  return (
+    <div className="fade-in">
+      <Toast {...toast} />
+      <PageHeader title="User Management" subtitle={`${users.length} registered users`}
+        action={
+          <button onClick={()=>setModal('addAdmin')} className="px-4 py-2 bg-gradient-to-r from-violet-600 to-purple-700 text-white text-sm font-bold rounded-xl hover:opacity-90 transition shadow-md">
+            ＋ Add Admin
+          </button>
+        }
+      />
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        <div className="relative flex-1">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by name or email…"
+            className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500" />
+        </div>
+        <Select value={roleFilter} onChange={e=>setRoleFilter(e.target.value)} className="w-auto">
+          <option value="All">All Roles</option>
+          {Object.values(ROLES).map(r=><option key={r}>{r}</option>)}
+        </Select>
+        <Select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} className="w-auto">
+          <option value="All">All Status</option>
+          {Object.values(STATUS).map(s=><option key={s}>{s}</option>)}
+        </Select>
+      </div>
+
+      {/* Summary chips */}
+      <div className="grid grid-cols-3 gap-3 mb-6">
+        {[
+          { role:ROLES.ADMIN,    g:'from-purple-500 to-violet-600', icon:'🛡️' },
+          { role:ROLES.VENDOR,   g:'from-blue-500   to-cyan-600',   icon:'🏪' },
+          { role:ROLES.CUSTOMER, g:'from-pink-500   to-rose-600',   icon:'👤' },
+        ].map(r=>(
+          <div key={r.role} className={`bg-gradient-to-br ${r.g} text-white rounded-2xl p-4 shadow-md cursor-pointer hover:opacity-90 transition ${roleFilter===r.role?'ring-4 ring-white/40':''}`}
+            onClick={()=>setRoleFilter(roleFilter===r.role?'All':r.role)}>
+            <div className="flex items-center justify-between">
+              <div><p className="text-xs opacity-80">{r.role}s</p><p className="text-2xl font-extrabold">{users.filter(u=>u.role===r.role).length}</p></div>
+              <span className="text-2xl opacity-80">{r.icon}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-gradient-to-r from-violet-50 to-purple-50 border-b border-gray-100 text-xs font-bold text-gray-500 uppercase tracking-wide">
+                <th className="text-left px-5 py-3">User</th>
+                <th className="text-left px-5 py-3">Contact</th>
+                <th className="text-left px-5 py-3">Role</th>
+                <th className="text-left px-5 py-3">Status</th>
+                <th className="text-left px-5 py-3">Joined</th>
+                <th className="text-right px-5 py-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {filtered.length === 0 ? (
+                <tr><td colSpan={6} className="text-center py-12 text-gray-400 text-sm">No users found.</td></tr>
+              ) : filtered.map(u => (
+                <tr key={u.id} className="hover:bg-violet-50/20 transition">
+                  <td className="px-5 py-3.5">
+                    <div className="flex items-center gap-3">
+                      <UserAvatar user={u} size="md" />
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">{fullName(u)}
+                          {u.id===currentUser?.id && <span className="ml-1 text-xs text-violet-500">(You)</span>}
+                        </p>
+                        <p className="text-xs text-gray-400">{u.email}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <p className="text-xs text-gray-600">{u.phone}</p>
+                    {u.gstNumber && <p className="text-xs text-gray-400 font-mono">{u.gstNumber}</p>}
+                  </td>
+                  <td className="px-5 py-3.5"><RoleBadge role={u.role} /></td>
+                  <td className="px-5 py-3.5"><StatusBadge status={u.status} /></td>
+                  <td className="px-5 py-3.5 text-xs text-gray-500">{u.createdAt}</td>
+                  <td className="px-5 py-3.5">
+                    <div className="flex gap-1.5 justify-end flex-wrap">
+                      <button onClick={()=>openEdit(u)} className="px-2.5 py-1 text-xs font-semibold text-violet-600 bg-violet-50 hover:bg-violet-100 rounded-lg transition">Edit</button>
+                      <button onClick={()=>{ toggleStatus(u.id); showToast(`User ${u.status==='Active'?'deactivated':'activated'}.`,'info'); }}
+                        disabled={u.id===currentUser?.id}
+                        className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition disabled:opacity-30 ${u.status==='Active'?'text-orange-600 bg-orange-50 hover:bg-orange-100':'text-emerald-600 bg-emerald-50 hover:bg-emerald-100'}`}>
+                        {u.status==='Active'?'Deactivate':'Activate'}
+                      </button>
+                      <button onClick={()=>openDel(u)} disabled={u.id===currentUser?.id}
+                        className="px-2.5 py-1 text-xs font-semibold text-red-500 bg-red-50 hover:bg-red-100 rounded-lg transition disabled:opacity-30">
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-5 py-2 bg-gray-50 border-t border-gray-100 text-xs text-gray-400">
+          Showing {filtered.length} of {users.length} users
+        </div>
+      </div>
+
+      {/* Edit Modal */}
+      {modal==='edit' && target && (
+        <Modal title="Edit User" onClose={()=>setModal(null)}>
+          <div className="p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="First Name"><Input value={target.firstName} onChange={e=>setTarget({...target,firstName:e.target.value})} /></Field>
+              <Field label="Last Name"><Input value={target.lastName} onChange={e=>setTarget({...target,lastName:e.target.value})} /></Field>
+            </div>
+            <Field label="Phone"><Input value={target.phone} onChange={e=>setTarget({...target,phone:e.target.value})} /></Field>
+            <Field label="Address"><Textarea value={target.address} onChange={e=>setTarget({...target,address:e.target.value})} rows={2} /></Field>
+            <Field label="Status">
+              <Select value={target.status} onChange={e=>setTarget({...target,status:e.target.value})}>
+                {Object.values(STATUS).map(s=><option key={s}>{s}</option>)}
+              </Select>
+            </Field>
+          </div>
+          <div className="px-6 pb-6 flex gap-3 justify-end">
+            <button onClick={()=>setModal(null)} className="px-4 py-2 text-sm font-semibold text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-50 transition">Cancel</button>
+            <button onClick={handleEditSave} className="px-4 py-2 text-sm font-bold text-white bg-gradient-to-r from-violet-600 to-purple-700 hover:opacity-90 rounded-xl transition">Save Changes</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete Modal */}
+      {modal==='delete' && target && (
+        <Modal title="Delete User" onClose={()=>setModal(null)}>
+          <div className="p-6 text-center">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">🗑️</div>
+            <p className="text-gray-600 text-sm mb-6">Delete <strong>{fullName(target)}</strong>? This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button onClick={()=>setModal(null)} className="flex-1 py-2.5 text-sm font-semibold text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-50 transition">Cancel</button>
+              <button onClick={handleDelete} className="flex-1 py-2.5 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-xl transition">Delete</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Add Admin Modal */}
+      {modal==='addAdmin' && (
+        <Modal title="Create Admin Account" onClose={()=>setModal(null)}>
+          <div className="p-6 space-y-4">
+            <div className="p-3 bg-purple-50 border border-purple-100 rounded-xl text-xs text-purple-700">Admin accounts can only be created by existing admins.</div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="First Name *" error={adminErrs.firstName}><Input value={adminForm.firstName} onChange={e=>setAdminForm({...adminForm,firstName:e.target.value})} error={adminErrs.firstName} /></Field>
+              <Field label="Last Name *"  error={adminErrs.lastName}><Input value={adminForm.lastName}  onChange={e=>setAdminForm({...adminForm,lastName:e.target.value})}  error={adminErrs.lastName} /></Field>
+            </div>
+            <Field label="Email *" error={adminErrs.email}><Input type="email" value={adminForm.email} onChange={e=>setAdminForm({...adminForm,email:e.target.value})} error={adminErrs.email} /></Field>
+            <Field label="Password *" error={adminErrs.password}><Input type="password" value={adminForm.password} onChange={e=>setAdminForm({...adminForm,password:e.target.value})} error={adminErrs.password} /></Field>
+            <Field label="Phone *" error={adminErrs.phone}><Input value={adminForm.phone} onChange={e=>setAdminForm({...adminForm,phone:e.target.value})} error={adminErrs.phone} /></Field>
+            <Field label="Address *" error={adminErrs.address}><Textarea value={adminForm.address} onChange={e=>setAdminForm({...adminForm,address:e.target.value})} rows={2} error={adminErrs.address} /></Field>
+          </div>
+          <div className="px-6 pb-6 flex gap-3 justify-end">
+            <button onClick={()=>setModal(null)} className="px-4 py-2 text-sm font-semibold text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-50 transition">Cancel</button>
+            <button onClick={handleAddAdmin} className="px-4 py-2 text-sm font-bold text-white bg-gradient-to-r from-violet-600 to-purple-700 hover:opacity-90 rounded-xl transition">Create Admin</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   VENDOR DASHBOARD
+════════════════════════════════════════ */
+function VendorDashboard({ setActivePage }) {
+  const { currentUser, vendors } = useAuth();
+  const myProfile = vendors.find(v=>v.userId===currentUser.id);
+  const status = myProfile?.onboardingStatus;
+
+  const stats = [
+    { label:'Onboarding Status', value: status || 'Not Started', icon:'📋', gradient: status===OB_STATUS.APPROVED?'bg-gradient-to-br from-emerald-500 to-teal-600': status===OB_STATUS.REJECTED?'bg-gradient-to-br from-red-500 to-rose-600':'bg-gradient-to-br from-amber-500 to-orange-600' },
+    { label:'Business Type',     value: myProfile?.businessType || '—',     icon:'🏷️', gradient:'bg-gradient-to-br from-blue-500   to-cyan-600' },
+    { label:'Account Status',    value: currentUser.status,                  icon:'👤', gradient: currentUser.status==='Active'?'bg-gradient-to-br from-emerald-500 to-teal-600':'bg-gradient-to-br from-amber-500 to-orange-600' },
+    { label:'Member Since',      value: currentUser.createdAt,               icon:'📅', gradient:'bg-gradient-to-br from-violet-500 to-purple-700' },
+  ];
+
+  return (
+    <div className="fade-in space-y-6">
+      <PageHeader title={`Welcome, ${currentUser.firstName}! 👋`} subtitle={`Vendor portal · ${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}`} />
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {stats.map(s=><StatCard key={s.label} {...s} />)}
+      </div>
+
+      {/* CTA if not yet submitted */}
+      {!myProfile && (
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-5 flex items-center gap-4">
+          <span className="text-4xl">🚀</span>
+          <div className="flex-1">
+            <p className="font-bold text-amber-800">Complete Your Onboarding</p>
+            <p className="text-sm text-amber-600 mt-0.5">Submit your business details to start selling on VendorApp.</p>
+          </div>
+          <button onClick={()=>setActivePage('onboarding')} className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-bold rounded-xl hover:opacity-90 transition">
+            Apply Now →
+          </button>
+        </div>
+      )}
+
+      {/* Status card if submitted */}
+      {myProfile && (
+        <div className={`rounded-2xl p-5 border flex items-start gap-4 ${status===OB_STATUS.APPROVED?'bg-emerald-50 border-emerald-200':status===OB_STATUS.REJECTED?'bg-red-50 border-red-200':'bg-amber-50 border-amber-200'}`}>
+          <span className="text-4xl">{status===OB_STATUS.APPROVED?'✅':status===OB_STATUS.REJECTED?'❌':'⏳'}</span>
+          <div className="flex-1">
+            <p className={`font-bold text-lg ${status===OB_STATUS.APPROVED?'text-emerald-800':status===OB_STATUS.REJECTED?'text-red-700':'text-amber-800'}`}>
+              {status===OB_STATUS.APPROVED?'Application Approved!':status===OB_STATUS.REJECTED?'Application Rejected':'Application Under Review'}
+            </p>
+            <p className={`text-sm mt-0.5 ${status===OB_STATUS.APPROVED?'text-emerald-600':status===OB_STATUS.REJECTED?'text-red-600':'text-amber-600'}`}>
+              {status===OB_STATUS.APPROVED?'Your business is live on the platform.':
+               status===OB_STATUS.REJECTED?`Reason: "${myProfile.rejectionReason}" — You may re-submit.`:
+               'Our team is reviewing your application.'}
+            </p>
+          </div>
+          <button onClick={()=>setActivePage('onboarding')} className="px-3 py-1.5 text-xs font-bold bg-white rounded-xl border border-gray-200 hover:bg-gray-50 transition">View Details</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   VENDOR ONBOARDING
+════════════════════════════════════════ */
+function VendorOnboardingPage() {
+  const { currentUser, vendors, submitOnboarding } = useAuth();
+  const myProfile = vendors.find(v=>v.userId===currentUser.id);
+  const [editing, setEditing] = useState(!myProfile);
+  const [toast, showToast] = useToast();
+
+  const BIZ_TYPES = ['Electronics','Food & Beverage','Fashion & Apparel','Health & Wellness','Home & Garden','Services','Sports & Fitness','Other'];
+
+  const blank = {
+    businessName:'', businessType:'Electronics', businessAddress:'', gstNumber:'',
+    pocName: currentUser.firstName + ' ' + currentUser.lastName,
+    pocPhone: currentUser.phone, pocEmail: currentUser.email,
+    description:'', documentName:''
+  };
+
+  const [form, setForm] = useState(myProfile ? {
+    businessName: myProfile.businessName, businessType: myProfile.businessType,
+    businessAddress: myProfile.businessAddress, gstNumber: myProfile.gstNumber||'',
+    pocName: myProfile.pocName, pocPhone: myProfile.pocPhone, pocEmail: myProfile.pocEmail,
+    description: myProfile.description||'', documentName: myProfile.documentName||''
+  } : blank);
+  const [errors, setErrors] = useState({});
+
+  const validate = () => {
+    const e = {};
+    if (!form.businessName.trim())    e.businessName    = 'Required';
+    if (!form.businessAddress.trim()) e.businessAddress = 'Required';
+    if (!form.pocName.trim())         e.pocName         = 'Required';
+    if (!form.pocPhone.trim())        e.pocPhone        = 'Required';
+    if (!/\S+@\S+\.\S+/.test(form.pocEmail)) e.pocEmail = 'Valid email required';
+    if (form.gstNumber && !/^[0-9A-Z]{15}$/.test(form.gstNumber.toUpperCase())) e.gstNumber = '15-char alphanumeric';
+    if (form.description.length > 500) e.description = 'Max 500 characters';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSubmit = () => {
+    if (!validate()) return;
+    submitOnboarding({ ...form, gstNumber: form.gstNumber.toUpperCase() });
+    showToast('Application submitted! Awaiting admin review.','info');
+    setEditing(false);
+  };
+
+  const F = ({ label, name, children, full }) => (
+    <div className={full ? 'col-span-2' : ''}>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      {children || <Input value={form[name]} onChange={e=>setForm({...form,[name]:e.target.value})} disabled={!editing} error={errors[name]} />}
+      {errors[name] && <p className="text-red-500 text-xs mt-1">{errors[name]}</p>}
+    </div>
+  );
+
+  return (
+    <div className="fade-in max-w-3xl space-y-6">
+      <Toast {...toast} />
+      <PageHeader title="My Onboarding" subtitle="Vendor business registration and approval" />
+
+      {/* Status banner */}
+      {myProfile && !editing && (() => {
+        const cfg = {
+          [OB_STATUS.PENDING]:  { icon:'⏳', bg:'bg-amber-50 border-amber-200',  text:'text-amber-800',  msg:'Your application is being reviewed.' },
+          [OB_STATUS.APPROVED]: { icon:'✅', bg:'bg-emerald-50 border-emerald-200', text:'text-emerald-800', msg:'Business approved! You are now live on the platform.' },
+          [OB_STATUS.REJECTED]: { icon:'❌', bg:'bg-red-50 border-red-200',     text:'text-red-700',    msg:`Rejected: "${myProfile.rejectionReason}". Please update and re-submit.` },
+        }[myProfile.onboardingStatus];
+        return (
+          <div className={`p-5 rounded-2xl border flex items-start gap-4 ${cfg.bg}`}>
+            <span className="text-3xl">{cfg.icon}</span>
+            <div className="flex-1">
+              <p className={`font-bold ${cfg.text}`}>{myProfile.onboardingStatus}</p>
+              <p className={`text-sm mt-0.5 ${cfg.text}`}>{cfg.msg}</p>
+              <p className="text-xs opacity-60 mt-1">Submitted: {myProfile.submittedAt}</p>
+            </div>
+            {myProfile.onboardingStatus !== OB_STATUS.PENDING && (
+              <button onClick={()=>setEditing(true)} className="px-3 py-1.5 text-xs font-bold bg-white rounded-xl border border-gray-200 hover:bg-gray-50 transition">
+                {myProfile.onboardingStatus===OB_STATUS.REJECTED ? 'Re-submit' : 'Edit'}
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Form */}
+      {(editing || !myProfile) && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+          <h3 className="font-bold text-gray-800 mb-5 flex items-center gap-2"><span>📋</span> Onboarding Form</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <F label="Business Name *" name="businessName" full />
+            <F label="Business Type / Category *" name="businessType" full>
+              <Select value={form.businessType} onChange={e=>setForm({...form,businessType:e.target.value})} disabled={!editing}>
+                {BIZ_TYPES.map(t=><option key={t}>{t}</option>)}
+              </Select>
+            </F>
+            <F label="Registered Business Address *" name="businessAddress" full>
+              <Textarea value={form.businessAddress} onChange={e=>setForm({...form,businessAddress:e.target.value})} disabled={!editing} rows={2} error={errors.businessAddress} />
+              {errors.businessAddress && <p className="text-red-500 text-xs mt-1">{errors.businessAddress}</p>}
+            </F>
+            <F label="GST Number (Optional)" name="gstNumber">
+              <Input value={form.gstNumber} onChange={e=>setForm({...form,gstNumber:e.target.value.toUpperCase()})} disabled={!editing} placeholder="29ABCDE1234F1Z5" maxLength={15} error={errors.gstNumber} />
+            </F>
+            <F label="Document / License Filename (Optional)" name="documentName">
+              <Input value={form.documentName} onChange={e=>setForm({...form,documentName:e.target.value})} disabled={!editing} placeholder="business_license.pdf" />
+            </F>
+            <div className="col-span-2 border-t border-gray-100 pt-4">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Point of Contact</p>
+            </div>
+            <F label="POC Full Name *" name="pocName" />
+            <F label="POC Phone *" name="pocPhone" />
+            <F label="POC Email *" name="pocEmail" full>
+              <Input type="email" value={form.pocEmail} onChange={e=>setForm({...form,pocEmail:e.target.value})} disabled={!editing} error={errors.pocEmail} />
+            </F>
+            <F label={`Business Description (Optional · ${form.description.length}/500)`} name="description" full>
+              <Textarea value={form.description} onChange={e=>setForm({...form,description:e.target.value})} disabled={!editing} rows={3} maxLength={500} placeholder="Tell customers about your business…" error={errors.description} />
+            </F>
+          </div>
+          <div className="mt-5 flex gap-3">
+            {myProfile && <button onClick={()=>setEditing(false)} className="px-4 py-2 text-sm font-semibold text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-50 transition">Cancel</button>}
+            <button onClick={handleSubmit} className="px-6 py-2.5 bg-gradient-to-r from-violet-600 to-purple-700 text-white text-sm font-bold rounded-xl hover:opacity-90 transition shadow-md">
+              {myProfile ? 'Update & Re-submit →' : 'Submit Application →'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Read-only view */}
+      {myProfile && !editing && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-gray-800">Application Details</h3>
+            <button onClick={()=>setEditing(true)} className="text-xs text-violet-600 font-semibold hover:underline">Edit</button>
+          </div>
+          <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
+            {[
+              ['Business Name', myProfile.businessName],
+              ['Business Type', myProfile.businessType],
+              ['GST Number', myProfile.gstNumber || '—'],
+              ['Document', myProfile.documentName || '—'],
+              ['POC Name', myProfile.pocName],
+              ['POC Phone', myProfile.pocPhone],
+              ['POC Email', myProfile.pocEmail],
+            ].map(([k,v])=>(
+              <div key={k}><span className="text-gray-400 font-medium">{k}: </span><span className="text-gray-700 font-semibold">{v}</span></div>
+            ))}
+            <div className="col-span-2"><span className="text-gray-400 font-medium">Address: </span><span className="text-gray-700 font-semibold">{myProfile.businessAddress}</span></div>
+            {myProfile.description && <div className="col-span-2"><span className="text-gray-400 font-medium">Description: </span><span className="text-gray-600">{myProfile.description}</span></div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   CUSTOMER DASHBOARD
+════════════════════════════════════════ */
+function CustomerDashboard({ setActivePage }) {
+  const { currentUser, users, vendors } = useAuth();
+  const approvedVendors = vendors.filter(v=>v.onboardingStatus===OB_STATUS.APPROVED);
+
+  const stats = [
+    { label:'Approved Vendors',  value: approvedVendors.length, icon:'🏪', gradient:'bg-gradient-to-br from-violet-500 to-purple-700' },
+    { label:'Total Vendors',     value: vendors.length,         icon:'📊', gradient:'bg-gradient-to-br from-blue-500   to-cyan-600' },
+    { label:'Account Status',    value: currentUser.status,     icon:'👤', gradient: currentUser.status==='Active'?'bg-gradient-to-br from-emerald-500 to-teal-600':'bg-gradient-to-br from-amber-500 to-orange-600' },
+    { label:'Member Since',      value: currentUser.createdAt,  icon:'📅', gradient:'bg-gradient-to-br from-pink-500   to-rose-600' },
+  ];
+
+  return (
+    <div className="fade-in space-y-6">
+      <PageHeader title={`Hello, ${currentUser.firstName}! 👋`} subtitle="Browse and discover approved vendors" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {stats.map(s=><StatCard key={s.label} {...s} />)}
+      </div>
+      <div className="bg-gradient-to-r from-violet-50 to-purple-50 border border-violet-100 rounded-2xl p-5 flex items-center gap-4">
+        <span className="text-4xl">🛍️</span>
+        <div className="flex-1">
+          <p className="font-bold text-violet-800">Discover Vendors</p>
+          <p className="text-sm text-violet-600 mt-0.5">{approvedVendors.length} approved vendor{approvedVendors.length!==1?'s':''} available to explore.</p>
+        </div>
+        <button onClick={()=>setActivePage('browse')} className="px-4 py-2 bg-gradient-to-r from-violet-600 to-purple-700 text-white text-sm font-bold rounded-xl hover:opacity-90 transition">Browse Now →</button>
+      </div>
+      {approvedVendors.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-gray-800">Featured Vendors</h3>
+            <button onClick={()=>setActivePage('browse')} className="text-xs text-violet-600 font-semibold hover:underline">View All →</button>
+          </div>
+          <div className="space-y-3">
+            {approvedVendors.slice(0,3).map(v=>(
+              <div key={v.id} className="flex items-center gap-3 py-2">
+                <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-cyan-500 rounded-xl flex items-center justify-center text-white font-extrabold text-lg flex-shrink-0">{v.businessName[0]}</div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-800 text-sm">{v.businessName}</p>
+                  <p className="text-xs text-gray-400">{v.businessType} · {v.businessAddress}</p>
+                </div>
+                <span className="text-xs bg-emerald-100 text-emerald-700 font-semibold px-2 py-0.5 rounded-full">✓ Verified</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   BROWSE VENDORS (Customer)
+════════════════════════════════════════ */
+function BrowseVendorsPage() {
+  const { vendors, users, fullName } = useAuth();
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('All');
+
+  const approved = vendors.filter(v=>v.onboardingStatus===OB_STATUS.APPROVED);
+  const types = ['All', ...Array.from(new Set(approved.map(v=>v.businessType)))];
+
+  const displayed = approved.filter(v => {
+    const q = search.toLowerCase();
+    const matchQ = v.businessName.toLowerCase().includes(q) || v.businessType.toLowerCase().includes(q) || (v.description||'').toLowerCase().includes(q);
+    const matchT = typeFilter==='All' || v.businessType===typeFilter;
+    return matchQ && matchT;
+  });
+
+  return (
+    <div className="fade-in">
+      <PageHeader title="Browse Vendors" subtitle={`${approved.length} verified vendors`} />
+
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        <div className="relative flex-1">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search vendors…"
+            className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500" />
+        </div>
+        <Select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} className="w-auto">
+          {types.map(t=><option key={t}>{t}</option>)}
+        </Select>
+      </div>
+
+      {displayed.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-100 p-16 text-center shadow-sm">
+          <p className="text-5xl mb-3">{approved.length===0?'🔍':'😕'}</p>
+          <p className="text-gray-500 font-semibold">{approved.length===0?'No vendors approved yet.':'No vendors match your search.'}</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {displayed.map(v => {
+            const u = users.find(x=>x.id===v.userId);
+            return (
+              <div key={v.id} className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition">
+                <div className="flex items-start gap-4 mb-4">
+                  <div className="w-14 h-14 bg-gradient-to-br from-blue-400 to-cyan-500 rounded-2xl flex items-center justify-center text-white font-extrabold text-2xl shadow flex-shrink-0">{v.businessName[0]}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-extrabold text-gray-800">{v.businessName}</h3>
+                      <span className="text-xs bg-emerald-100 text-emerald-700 font-semibold px-2 py-0.5 rounded-full">✓ Verified</span>
+                    </div>
+                    <span className="text-xs bg-violet-100 text-violet-700 font-semibold px-2 py-0.5 rounded-full mt-1 inline-block">{v.businessType}</span>
+                  </div>
+                </div>
+                {v.description && <p className="text-sm text-gray-500 mb-4 line-clamp-2">{v.description}</p>}
+                <div className="space-y-1.5 text-xs text-gray-500">
+                  <p>📍 {v.businessAddress}</p>
+                  <p>📞 {v.pocPhone} · ✉️ {v.pocEmail}</p>
+                  {v.gstNumber && <p className="font-mono">GST: {v.gstNumber}</p>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   MY PROFILE (all roles)
+════════════════════════════════════════ */
+function MyProfilePage() {
+  const { currentUser, updateUser, fullName } = useAuth();
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ firstName: currentUser.firstName, lastName: currentUser.lastName, phone: currentUser.phone, address: currentUser.address });
+  const [toast, showToast] = useToast();
+
+  const handleSave = () => {
+    updateUser(currentUser.id, form);
+    setEditing(false);
+    showToast('Profile updated!');
+  };
+
+  return (
+    <div className="fade-in max-w-2xl space-y-6">
+      <Toast {...toast} />
+      <PageHeader title="My Profile" subtitle="View and manage your account information" />
+      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+        {/* Header */}
+        <div className="flex items-center gap-5 pb-5 mb-5 border-b border-gray-100">
+          <UserAvatar user={currentUser} size="xl" />
+          <div>
+            <h3 className="text-xl font-extrabold text-gray-800">{fullName(currentUser)}</h3>
+            <p className="text-gray-500 text-sm">{currentUser.email}</p>
+            <div className="mt-2 flex gap-2"><RoleBadge role={currentUser.role} /><StatusBadge status={currentUser.status} /></div>
+          </div>
+        </div>
+
+        {/* Fields */}
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="First Name">
+              <Input value={form.firstName} onChange={e=>setForm({...form,firstName:e.target.value})} disabled={!editing} />
+            </Field>
+            <Field label="Last Name">
+              <Input value={form.lastName} onChange={e=>setForm({...form,lastName:e.target.value})} disabled={!editing} />
+            </Field>
+          </div>
+          <Field label="Email Address">
+            <Input value={currentUser.email} disabled />
+          </Field>
+          <Field label="Phone Number">
+            <Input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} disabled={!editing} />
+          </Field>
+          <Field label="Address">
+            <Textarea value={form.address} onChange={e=>setForm({...form,address:e.target.value})} disabled={!editing} rows={2} />
+          </Field>
+          {currentUser.gstNumber && (
+            <Field label="GST Number"><Input value={currentUser.gstNumber} disabled /></Field>
+          )}
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Role"><Input value={currentUser.role} disabled /></Field>
+            <Field label="Member Since"><Input value={currentUser.createdAt} disabled /></Field>
+          </div>
+        </div>
+
+        <div className="mt-5 flex gap-3">
+          {editing ? (
+            <>
+              <button onClick={()=>{ setEditing(false); setForm({ firstName:currentUser.firstName, lastName:currentUser.lastName, phone:currentUser.phone, address:currentUser.address }); }}
+                className="px-4 py-2 text-sm font-semibold text-gray-700 border border-gray-300 rounded-xl hover:bg-gray-50 transition">Cancel</button>
+              <button onClick={handleSave} className="px-4 py-2 text-sm font-bold text-white bg-gradient-to-r from-violet-600 to-purple-700 hover:opacity-90 rounded-xl transition">Save Changes</button>
+            </>
+          ) : (
+            <button onClick={()=>setEditing(true)} className="px-4 py-2 text-sm font-bold text-white bg-gradient-to-r from-violet-600 to-purple-700 hover:opacity-90 rounded-xl transition">Edit Profile</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   APP SHELL
+════════════════════════════════════════ */
+function AppShell() {
+  const { currentUser, page, setPage } = useAuth();
+  const [activePage, setActivePage] = useState('dashboard');
+
+  useEffect(() => { setActivePage('dashboard'); }, [currentUser?.id]);
+
+  if (!currentUser) {
+    if (page === 'register') return <RegisterPage />;
+    if (page === 'forgot')   return <ForgotPasswordPage />;
+    return <LoginPage />;
+  }
+
+  const renderPage = () => {
+    const role = currentUser.role;
+    if (activePage === 'dashboard') {
+      if (role===ROLES.ADMIN)    return <AdminDashboard    setActivePage={setActivePage} />;
+      if (role===ROLES.VENDOR)   return <VendorDashboard   setActivePage={setActivePage} />;
+      if (role===ROLES.CUSTOMER) return <CustomerDashboard setActivePage={setActivePage} />;
+    }
+    if (activePage === 'vendors')     return <AdminVendorsPage />;
+    if (activePage === 'users')       return <AdminUsersPage />;
+    if (activePage === 'onboarding')  return <VendorOnboardingPage />;
+    if (activePage === 'browse')      return <BrowseVendorsPage />;
+    if (activePage === 'profile')     return <MyProfilePage />;
+    return null;
+  };
+
+  return (
+    <div className="flex min-h-screen">
+      <Sidebar activePage={activePage} setActivePage={setActivePage} />
+      <main className="flex-1 p-6 lg:p-8 bg-slate-50 overflow-auto">
+        {renderPage()}
+      </main>
+    </div>
+  );
+}
+
+function App() {
+  return <AuthProvider><AppShell /></AuthProvider>;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
