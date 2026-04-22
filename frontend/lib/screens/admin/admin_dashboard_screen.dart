@@ -8,7 +8,8 @@ import '../../widgets/status_chip.dart' show StatusChip;
 import '../../widgets/role_chip.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
-  const AdminDashboardScreen({super.key});
+  final void Function(String page, {String? role})? onNavigate;
+  const AdminDashboardScreen({super.key, this.onNavigate});
   @override State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
 }
 
@@ -31,10 +32,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final vendors = admin.vendors;
 
     final stats = [
-      {'label': 'Total Users',       'value': '${users.length}',                                                    'icon': Icons.people,               'colors': [const Color(0xFF0F766E), const Color(0xFF134E4A)]},
-      {'label': 'Vendors',           'value': '${users.where((u) => u.role == 'Vendor').length}',                   'icon': Icons.store,                 'colors': [const Color(0xFFF59E0B), const Color(0xFFD97706)]},
-      {'label': 'Customers',         'value': '${users.where((u) => u.role == 'Customer').length}',                 'icon': Icons.person,                'colors': [const Color(0xFF0891B2), const Color(0xFF0E7490)]},
-      {'label': 'Pending Approvals', 'value': '${vendors.where((v) => v.onboardingStatus == 'Pending').length}',    'icon': Icons.pending_actions,       'colors': [const Color(0xFFD97706), const Color(0xFFB45309)]},
+      {'label': 'Total Users',       'value': '${users.length}',                                                 'icon': Icons.people,          'colors': [const Color(0xFF0F766E), const Color(0xFF134E4A)], 'page': 'users',   'role': null},
+      {'label': 'Vendors',           'value': '${users.where((u) => u.role == 'Vendor').length}',                'icon': Icons.store,           'colors': [const Color(0xFFF59E0B), const Color(0xFFD97706)], 'page': 'users',   'role': 'Vendor'},
+      {'label': 'Customers',         'value': '${users.where((u) => u.role == 'Customer').length}',             'icon': Icons.person,          'colors': [const Color(0xFF0891B2), const Color(0xFF0E7490)], 'page': 'users',   'role': 'Customer'},
+      {'label': 'Pending Approvals', 'value': '${vendors.where((v) => v.onboardingStatus == 'Pending').length}','icon': Icons.pending_actions, 'colors': [const Color(0xFFD97706), const Color(0xFFB45309)], 'page': 'vendors', 'role': null},
     ];
 
     return Scaffold(
@@ -61,6 +62,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   value: s['value'] as String,
                   icon: s['icon'] as IconData,
                   gradientColors: s['colors'] as List<Color>,
+                  onTap: () => widget.onNavigate?.call(
+                    s['page'] as String,
+                    role: s['role'] as String?,
+                  ),
                 )).toList(),
               ),
               const SizedBox(height: 24),
@@ -90,7 +95,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 if (vendors.where((v) => v.onboardingStatus == 'Pending').isNotEmpty)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                    decoration: BoxDecoration(color: AppTheme.amber.withOpacity(0.15),
+                    decoration: BoxDecoration(color: AppTheme.amber.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(20)),
                     child: Text('${vendors.where((v) => v.onboardingStatus == 'Pending').length} pending',
                       style: const TextStyle(color: AppTheme.amber, fontSize: 12, fontWeight: FontWeight.w700))),
@@ -102,7 +107,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: AppTheme.cyan.withOpacity(0.2),
+                      backgroundColor: AppTheme.cyan.withValues(alpha: 0.2),
                       child: Text(v.businessName[0], style: const TextStyle(color: AppTheme.cyan, fontWeight: FontWeight.bold))),
                     title: Text(v.businessName, style: const TextStyle(fontWeight: FontWeight.w700)),
                     subtitle: Text('${u?.fullName ?? '—'} · ${v.submittedAt}',

@@ -7,13 +7,14 @@ import '../../providers/admin_provider.dart';
 import '../../widgets/role_chip.dart';
 
 class UserManagementScreen extends StatefulWidget {
-  const UserManagementScreen({super.key});
+  final String? initialRole;
+  const UserManagementScreen({super.key, this.initialRole});
   @override State<UserManagementScreen> createState() => _UserManagementScreenState();
 }
 
 class _UserManagementScreenState extends State<UserManagementScreen> {
   final _searchCtrl = TextEditingController();
-  String _roleFilter   = 'All';
+  late String _roleFilter   = widget.initialRole ?? 'All';
   String _statusFilter = 'All';
 
   @override
@@ -36,8 +37,8 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   Future<void> _showEditDialog(User u) async {
     final firstCtrl   = TextEditingController(text: u.firstName);
     final lastCtrl    = TextEditingController(text: u.lastName);
-    final phoneCtrl   = TextEditingController(text: u.phoneNumber ?? '');
-    final addressCtrl = TextEditingController(text: u.address ?? '');
+    final phoneCtrl   = TextEditingController(text: u.phoneNumber);
+    final addressCtrl = TextEditingController(text: u.address);
     String? err;
 
     await showDialog(
@@ -60,7 +61,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 if (err != null) ...[
                   Container(
                     padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(color: AppTheme.rose.withOpacity(0.1),
+                    decoration: BoxDecoration(color: AppTheme.rose.withValues(alpha:0.1),
                       borderRadius: BorderRadius.circular(8)),
                     child: Text(err!, style: const TextStyle(color: AppTheme.rose, fontSize: 13))),
                   const SizedBox(height: 12),
@@ -132,7 +133,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 if (err != null) ...[
                   Container(
                     padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(color: AppTheme.rose.withOpacity(0.1),
+                    decoration: BoxDecoration(color: AppTheme.rose.withValues(alpha:0.1),
                       borderRadius: BorderRadius.circular(8)),
                     child: Text(err!, style: const TextStyle(color: AppTheme.rose, fontSize: 13))),
                   const SizedBox(height: 12),
@@ -283,7 +284,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                         child: Row(children: [
                           CircleAvatar(
                             radius: 22,
-                            backgroundColor: AppTheme.violet.withOpacity(0.15),
+                            backgroundColor: AppTheme.violet.withValues(alpha:0.15),
                             child: Text(u.initials,
                               style: const TextStyle(color: AppTheme.violet, fontWeight: FontWeight.bold))),
                           const SizedBox(width: 14),
@@ -296,7 +297,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: AppTheme.violet.withOpacity(0.1),
+                                    color: AppTheme.violet.withValues(alpha:0.1),
                                     borderRadius: BorderRadius.circular(6)),
                                   child: const Text('You', style: TextStyle(fontSize: 10, color: AppTheme.violet, fontWeight: FontWeight.w700))),
                               ],
@@ -361,7 +362,7 @@ class _FilterChips extends StatelessWidget {
         decoration: BoxDecoration(
           border: Border.all(color: const Color(0xFFE5E7EB)),
           borderRadius: BorderRadius.circular(10),
-          color: value == 'All' ? Colors.white : AppTheme.violet.withOpacity(0.08)),
+          color: value == 'All' ? Colors.white : AppTheme.violet.withValues(alpha:0.08)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Text('$label: $value',
             style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,

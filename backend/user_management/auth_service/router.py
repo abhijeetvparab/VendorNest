@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from common.database import get_db
-from common.models import User, UserRole, UserStatus
+from common.models import User, UserRole, UserStatus, VendorProfile
 from common.schemas import (
     RegisterRequest, LoginRequest, TokenResponse,
     RefreshRequest, UserResponse,
@@ -38,6 +38,21 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    if user.role == UserRole.VENDOR and data.document_name:
+        profile = VendorProfile(
+            user_id          = user.id,
+            business_name    = f"{user.first_name} {user.last_name}",
+            business_type    = "General",
+            business_address = user.address,
+            poc_name         = f"{user.first_name} {user.last_name}",
+            poc_phone        = user.phone_number,
+            poc_email        = user.email,
+            document_name    = data.document_name,
+        )
+        db.add(profile)
+        db.commit()
+
     return user
 
 

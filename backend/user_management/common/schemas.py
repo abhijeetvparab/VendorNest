@@ -8,14 +8,15 @@ from common.models import UserRole, UserStatus, OnboardingStatus
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 class RegisterRequest(BaseModel):
-    first_name:   str
-    last_name:    str
-    email:        EmailStr
-    phone_number: str
-    address:      str
-    gst_number:   Optional[str] = None
-    password:     str
-    role:         UserRole
+    first_name:    str
+    last_name:     str
+    email:         EmailStr
+    phone_number:  str
+    address:       str
+    gst_number:    Optional[str] = None
+    document_name: Optional[str] = None
+    password:      str
+    role:          UserRole
 
     @field_validator("first_name", "last_name")
     @classmethod

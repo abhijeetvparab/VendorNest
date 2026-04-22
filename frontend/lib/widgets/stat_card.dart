@@ -5,6 +5,7 @@ class StatCard extends StatelessWidget {
   final String value;
   final IconData icon;
   final List<Color> gradientColors;
+  final VoidCallback? onTap;
 
   const StatCard({
     super.key,
@@ -12,11 +13,12 @@ class StatCard extends StatelessWidget {
     required this.value,
     required this.icon,
     required this.gradientColors,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -27,7 +29,7 @@ class StatCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: gradientColors.first.withOpacity(0.3),
+            color: gradientColors.first.withValues(alpha: 0.3),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -56,6 +58,16 @@ class StatCard extends StatelessWidget {
               fontWeight: FontWeight.w900),
             maxLines: 1, overflow: TextOverflow.ellipsis),
         ],
+      ),
+    );
+
+    if (onTap == null) return card;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: card,
       ),
     );
   }

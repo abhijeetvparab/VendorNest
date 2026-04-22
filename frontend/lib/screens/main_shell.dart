@@ -27,7 +27,8 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
-  String _activePage = 'dashboard';
+  String  _activePage  = 'dashboard';
+  String? _navRole;
 
   static const List<_NavItem> _adminNav = [
     _NavItem('dashboard', 'Dashboard',          Icons.home_outlined),
@@ -53,19 +54,26 @@ class _MainShellState extends State<MainShell> {
     return _customerNav;
   }
 
+  void _navigate(String page, {String? role}) {
+    setState(() {
+      _activePage = page;
+      _navRole = role;
+    });
+  }
+
   Widget _buildPage() {
     final role = context.read<AuthProvider>().role;
     switch (_activePage) {
       case 'dashboard':
-        if (role == 'Admin')    return const AdminDashboardScreen();
-        if (role == 'Vendor')   return const VendorDashboardScreen();
+        if (role == 'Admin')  return AdminDashboardScreen(onNavigate: _navigate);
+        if (role == 'Vendor') return const VendorDashboardScreen();
         return const CustomerDashboardScreen();
-      case 'vendors':   return const VendorRequestsScreen();
-      case 'users':     return const UserManagementScreen();
-      case 'onboarding':return const VendorOnboardingScreen();
-      case 'browse':    return const BrowseVendorsScreen();
-      case 'profile':   return const ProfileScreen();
-      default:          return const SizedBox.shrink();
+      case 'vendors':    return const VendorRequestsScreen();
+      case 'users':      return UserManagementScreen(initialRole: _navRole);
+      case 'onboarding': return const VendorOnboardingScreen();
+      case 'browse':     return const BrowseVendorsScreen();
+      case 'profile':    return const ProfileScreen();
+      default:           return const SizedBox.shrink();
     }
   }
 
@@ -78,7 +86,7 @@ class _MainShellState extends State<MainShell> {
   Widget _wideLayout() => Scaffold(
     body: Row(children: [
       _Sidebar(activePage: _activePage, navItems: _navItems,
-        onSelect: (id) => setState(() => _activePage = id)),
+        onSelect: (id) => setState(() { _activePage = id; _navRole = null; })),
       Expanded(
         child: ColoredBox(
           color: const Color(0xFFF8FAFC),
@@ -105,7 +113,7 @@ class _MainShellState extends State<MainShell> {
       ),
       drawer: _DrawerContent(
         activePage: _activePage, navItems: _navItems,
-        onSelect: (id) { setState(() => _activePage = id); Navigator.pop(context); }),
+        onSelect: (id) { setState(() { _activePage = id; _navRole = null; }); Navigator.pop(context); }),
       body: ColoredBox(color: const Color(0xFFF8FAFC), child: _buildPage()),
       bottomNavigationBar: _navItems.length <= 4 ? _bottomNav(pending) : null,
     );
@@ -115,7 +123,7 @@ class _MainShellState extends State<MainShell> {
     final items = _navItems;
     return BottomNavigationBar(
       currentIndex: items.indexWhere((n) => n.id == _activePage).clamp(0, items.length - 1),
-      onTap: (i) => setState(() => _activePage = items[i].id),
+      onTap: (i) => setState(() { _activePage = items[i].id; _navRole = null; }),
       type: BottomNavigationBarType.fixed,
       selectedItemColor: AppTheme.violet,
       unselectedItemColor: Colors.grey,
