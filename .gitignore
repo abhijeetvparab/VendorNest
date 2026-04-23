@@ -9,6 +9,12 @@ dist/
 build/
 .venv/
 venv/
+android/
+ios/
+linux/
+macos/
+web/
+windows/
 
 # Flutter
 frontend/.dart_tool/
