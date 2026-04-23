@@ -11,6 +11,7 @@ class ApiConfig {
 
   static const String users          = '$baseUrl/api/users';
   static const String usersMe        = '$baseUrl/api/users/me';
+  static const String cities         = '$baseUrl/api/users/cities';
   static String userById(String id)  => '$baseUrl/api/users/$id';
   static String userStatus(String id)=> '$baseUrl/api/users/$id/status';
   static const String createAdmin    = '$baseUrl/api/users/admin';
