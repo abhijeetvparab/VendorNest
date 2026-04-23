@@ -74,3 +74,11 @@ class VendorProfile(Base):
     submitted_at      = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="vendor_profile", foreign_keys=[user_id])
+
+
+class City(Base):
+    __tablename__ = "city"
+
+    id    = Column(Integer, primary_key=True, autoincrement=True)
+    city  = Column(String(100), nullable=False)
+    state = Column(String(100), nullable=False)

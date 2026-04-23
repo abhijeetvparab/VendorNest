@@ -173,4 +173,14 @@ class VendorProfileResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── City ──────────────────────────────────────────────────────────────────────
+
+class CityResponse(BaseModel):
+    id:    int
+    city:  str
+    state: str
+
+    model_config = {"from_attributes": True}
+
+
 TokenResponse.model_rebuild()

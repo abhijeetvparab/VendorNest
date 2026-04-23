@@ -1,9 +1,12 @@
+import 'dart:convert';
 import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../../app_theme.dart';
+import '../../config/api_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/gradient_button.dart';
 
@@ -17,27 +20,135 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _firstCtrl   = TextEditingController();
   final _lastCtrl    = TextEditingController();
   final _phoneCtrl   = TextEditingController();
-  final _addressCtrl = TextEditingController();
+  final _addr1Ctrl   = TextEditingController();
+  final _addr2Ctrl   = TextEditingController();
+  final _stateCtrl   = TextEditingController();
+  final _pinCtrl     = TextEditingController();
   final _gstCtrl     = TextEditingController();
   final _emailCtrl   = TextEditingController();
   final _passCtrl    = TextEditingController();
   final _confirmCtrl = TextEditingController();
 
-  String  _selectedRole  = 'Vendor';
-  bool    _obscurePass   = true;
-  bool    _obscureConf   = true;
-  bool    _submitted     = false;
-  bool    _hasAttempted  = false;
+  String  _selectedRole = 'Vendor';
+  bool    _obscurePass  = true;
+  bool    _obscureConf  = true;
+  bool    _submitted    = false;
+  bool    _hasAttempted = false;
   String? _documentName;
+
+  // City autocomplete state
+  String?                  _selectedCity;
+  List<Map<String, String>> _cities        = [];
+  bool                     _citiesLoading  = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCities();
+  }
 
   @override
   void dispose() {
-    for (final c in [_firstCtrl, _lastCtrl, _phoneCtrl, _addressCtrl,
+    for (final c in [_firstCtrl, _lastCtrl, _phoneCtrl,
+                     _addr1Ctrl, _addr2Ctrl, _stateCtrl, _pinCtrl,
                      _gstCtrl, _emailCtrl, _passCtrl, _confirmCtrl]) {
       c.dispose();
     }
     super.dispose();
   }
+
+  // ── Cities ──────────────────────────────────────────────────────────────────
+
+  Future<void> _loadCities() async {
+    setState(() => _citiesLoading = true);
+    try {
+      final res = await http.get(Uri.parse(ApiConfig.cities));
+      if (res.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(res.body);
+        setState(() {
+          _cities = data
+              .map((item) => {
+                    'city':  item['city']  as String,
+                    'state': item['state'] as String,
+                  })
+              .toList();
+        });
+      }
+    } catch (_) {
+      // city list unavailable — user can still type
+    } finally {
+      setState(() => _citiesLoading = false);
+    }
+  }
+
+  Widget _cityDropdown() => Autocomplete<String>(
+    optionsBuilder: (TextEditingValue tv) {
+      final q = tv.text.toLowerCase();
+      if (q.isEmpty) return _cities.map((c) => c['city']!);
+      return _cities
+          .where((c) => c['city']!.toLowerCase().contains(q))
+          .map((c) => c['city']!);
+    },
+    onSelected: (String city) {
+      final match = _cities.firstWhere((c) => c['city'] == city);
+      setState(() {
+        _selectedCity   = city;
+        _stateCtrl.text = match['state']!;
+      });
+      _formKey.currentState?.validate();
+    },
+    fieldViewBuilder: (context, ctrl, focusNode, _) => TextFormField(
+      controller:       ctrl,
+      focusNode:        focusNode,
+      autovalidateMode: AutovalidateMode.onUserInteraction,
+      decoration: InputDecoration(
+        labelText:   'City *',
+        suffixIcon:  _citiesLoading
+            ? const Padding(
+                padding: EdgeInsets.all(12),
+                child: SizedBox(width: 16, height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2)))
+            : const Icon(Icons.keyboard_arrow_down_rounded,
+                size: 20, color: Colors.grey),
+      ),
+      validator: (_) =>
+          _selectedCity == null && _hasAttempted ? 'City is required' : null,
+      onChanged: (v) {
+        if (_selectedCity != null && v != _selectedCity) {
+          setState(() {
+            _selectedCity   = null;
+            _stateCtrl.clear();
+          });
+        }
+      },
+    ),
+    optionsViewBuilder: (context, onSelected, options) => Align(
+      alignment: Alignment.topLeft,
+      child: Material(
+        elevation:     8,
+        borderRadius:  BorderRadius.circular(12),
+        color:         Colors.white,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 240),
+          child: ListView.builder(
+            shrinkWrap:  true,
+            padding:     EdgeInsets.zero,
+            itemCount:   options.length,
+            itemBuilder: (context, i) {
+              final city = options.elementAt(i);
+              return InkWell(
+                onTap: () => onSelected(city),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Text(city, style: const TextStyle(fontSize: 14)),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    ),
+  );
 
   // ── Document picker ─────────────────────────────────────────────────────────
 
@@ -77,9 +188,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _selectedRole == 'Vendor'
-                    ? 'Business Document (Optional)'
-                    : 'ID / Supporting Document (Optional)',
+                'Business Document (Optional)',
                 style: TextStyle(
                   fontSize: 11, fontWeight: FontWeight.w500,
                   color: _documentName != null ? AppTheme.violet : Colors.grey)),
@@ -109,14 +218,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   );
 
   // ── Validators ──────────────────────────────────────────────────────────────
-  // Pattern: return null for empty fields until the user has attempted submit.
-  // Format errors are shown as soon as the user starts typing.
 
   String? _req(String? v, String label) {
     if (v == null || v.trim().isEmpty) {
       return _hasAttempted ? '$label is required' : null;
     }
-    return '';   // sentinel: field is non-empty, proceed to format check
+    return '';
   }
 
   String? _validateName(String? v, String label) {
@@ -155,10 +262,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ? null : 'Invalid GST — expected format: 29ABCDE1234F1Z5';
   }
 
-  String? _validateAddress(String? v) {
-    final r = _req(v, 'Address');
+  String? _validateAddr1(String? v) {
+    final r = _req(v, 'Address Line 1');
     if (r != '') return r;
-    return (v!.trim().length >= 10) ? null : 'Minimum 10 characters';
+    return v!.trim().length >= 5 ? null : 'Minimum 5 characters';
+  }
+
+  String? _validatePin(String? v) {
+    final r = _req(v, 'Pincode');
+    if (r != '') return r;
+    return RegExp(r'^[1-9][0-9]{5}$').hasMatch(v!.trim())
+        ? null : 'Enter a valid 6-digit pincode';
+  }
+
+  String get _combinedAddress {
+    final parts = [
+      _addr1Ctrl.text.trim(),
+      if (_addr2Ctrl.text.trim().isNotEmpty) _addr2Ctrl.text.trim(),
+      if (_selectedCity != null) _selectedCity!,
+      _stateCtrl.text.trim(),
+      _pinCtrl.text.trim(),
+    ];
+    return parts.where((p) => p.isNotEmpty).join(', ');
   }
 
   String? _validatePassword(String? v) {
@@ -185,16 +310,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!_formKey.currentState!.validate()) return;
     final auth = context.read<AuthProvider>();
     final ok = await auth.register({
-      'first_name'  : _firstCtrl.text.trim(),
-      'last_name'   : _lastCtrl.text.trim(),
-      'email'       : _emailCtrl.text.trim(),
-      'phone_number': _phoneCtrl.text.trim(),
-      'address'     : _addressCtrl.text.trim(),
+      'first_name'   : _firstCtrl.text.trim(),
+      'last_name'    : _lastCtrl.text.trim(),
+      'email'        : _emailCtrl.text.trim(),
+      'phone_number' : _phoneCtrl.text.trim(),
+      'address'      : _combinedAddress,
       'gst_number'   : _gstCtrl.text.trim().isEmpty
-                         ? null : _gstCtrl.text.trim().toUpperCase(),
+                           ? null : _gstCtrl.text.trim().toUpperCase(),
       'document_name': _documentName,
       'password'     : _passCtrl.text,
-      'role'        : _selectedRole,
+      'role'         : _selectedRole,
     });
     if (!mounted) return;
     if (ok) {
@@ -250,7 +375,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         child: Padding(
                           padding: const EdgeInsets.only(right: 8),
                           child: OutlinedButton(
-                            onPressed: () => setState(() => _selectedRole = r),
+                            onPressed: () => setState(() {
+                              _selectedRole = r;
+                              if (r == 'Customer') {
+                                _gstCtrl.clear();
+                                _documentName = null;
+                              }
+                            }),
                             style: OutlinedButton.styleFrom(
                               backgroundColor: _selectedRole == r
                                   ? AppTheme.violet : Colors.transparent,
@@ -277,35 +408,59 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ]),
                       const SizedBox(height: 12),
 
-                      // Phone + GST
-                      Row(children: [
-                        Expanded(child: _field('Phone Number *', _phoneCtrl,
+                      // Phone (+ GST for Vendor)
+                      if (_selectedRole == 'Vendor')
+                        Row(children: [
+                          Expanded(child: _field('Phone Number *', _phoneCtrl,
+                            type: TextInputType.phone,
+                            validator: _validatePhone)),
+                          const SizedBox(width: 12),
+                          Expanded(child: _field('GST Number *', _gstCtrl,
+                            validator: _validateGst,
+                            inputFormatters: [_UpperCaseFormatter()])),
+                        ])
+                      else
+                        _field('Phone Number *', _phoneCtrl,
                           type: TextInputType.phone,
-                          validator: _validatePhone)),
+                          validator: _validatePhone),
+                      const SizedBox(height: 12),
+
+                      // Document upload (Vendor only, optional)
+                      if (_selectedRole == 'Vendor') ...[
+                        _documentPickerField(),
+                        const SizedBox(height: 12),
+                      ],
+
+                      // Address
+                      _field('Address Line 1 *', _addr1Ctrl,
+                        validator: _validateAddr1),
+                      const SizedBox(height: 12),
+                      _field('Address Line 2 (Optional)', _addr2Ctrl),
+                      const SizedBox(height: 12),
+
+                      // City (dropdown) + State (auto-filled, read-only)
+                      Row(children: [
+                        Expanded(child: _cityDropdown()),
                         const SizedBox(width: 12),
-                        Expanded(child: _field(
-                          _selectedRole == 'Vendor'
-                              ? 'GST Number *' : 'GST Number (Optional)',
-                          _gstCtrl,
-                          validator: _validateGst,
-                          inputFormatters: [_UpperCaseFormatter()],
+                        Expanded(child: TextFormField(
+                          controller: _stateCtrl,
+                          readOnly:   true,
+                          decoration: InputDecoration(
+                            labelText: 'State',
+                            filled:    _selectedCity != null,
+                            fillColor: _selectedCity != null
+                                ? AppTheme.violet.withValues(alpha: 0.05)
+                                : null,
+                          ),
                         )),
                       ]),
                       const SizedBox(height: 12),
 
-                      // Document upload (all roles, optional)
-                      const SizedBox(height: 12),
-                      _documentPickerField(),
-                      const SizedBox(height: 12),
-
-                      // Address
-                      TextFormField(
-                        controller: _addressCtrl,
-                        maxLines: 2,
-                        autovalidateMode: AutovalidateMode.onUserInteraction,
-                        decoration: const InputDecoration(labelText: 'Address *'),
-                        validator: _validateAddress,
-                      ),
+                      _field('Pincode *', _pinCtrl,
+                        type: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly,
+                                          LengthLimitingTextInputFormatter(6)],
+                        validator: _validatePin),
                       const SizedBox(height: 12),
 
                       // Email

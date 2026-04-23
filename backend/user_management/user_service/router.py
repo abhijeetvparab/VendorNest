@@ -2,10 +2,10 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from common.database import get_db
-from common.models import User, UserRole, UserStatus
+from common.models import User, UserRole, UserStatus, City
 from common.schemas import (
     UserResponse, UserUpdate, UserStatusUpdate,
-    CreateAdminRequest,
+    CreateAdminRequest, CityResponse,
 )
 from common.auth_utils import get_current_user, require_admin, hash_password
 
@@ -31,6 +31,11 @@ def list_users(
             User.first_name.ilike(s) | User.last_name.ilike(s) | User.email.ilike(s)
         )
     return q.offset(skip).limit(limit).all()
+
+
+@router.get("/cities", response_model=List[CityResponse])
+def list_cities(db: Session = Depends(get_db)):
+    return db.query(City).order_by(City.city).all()
 
 
 @router.get("/me", response_model=UserResponse)
