@@ -72,6 +72,18 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
             detail=f"Invalid credentials. {left} attempt(s) remaining.",
         )
 
+    # Status check — block pending/inactive accounts before issuing tokens
+    if user.status == UserStatus.PENDING:
+        raise HTTPException(
+            status_code=403,
+            detail="Your account is pending admin approval. You will be notified once approved.",
+        )
+    if user.status == UserStatus.INACTIVE:
+        raise HTTPException(
+            status_code=403,
+            detail="Your account has been deactivated. Please contact support.",
+        )
+
     # Success
     user.failed_attempts = 0
     user.locked_until    = None

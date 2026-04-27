@@ -23,8 +23,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     if (ok) {
       final role = auth.user?.role ?? '';
-      // Admin bypasses role check; Vendor/Customer must match selection
-      if (role != 'Admin' && _selectedRole != role) {
+      if (_selectedRole != role) {
         await auth.logout();
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Incorrect role selected. Please select "$role".'),
@@ -130,13 +129,14 @@ class _LoginScreenState extends State<LoginScreen> {
         decoration: const InputDecoration(
           labelText: 'Login As',
           prefixIcon: Icon(Icons.badge_outlined),
-          hintText: 'Select role (skip for Admin)'),
+          hintText: 'Select your role'),
         items: const [
+          DropdownMenuItem(value: 'Admin',    child: Text('Admin')),
           DropdownMenuItem(value: 'Vendor',   child: Text('Vendor')),
           DropdownMenuItem(value: 'Customer', child: Text('Customer')),
         ],
         onChanged: (v) => setState(() => _selectedRole = v),
-        validator: (_) => null,
+        validator: (v) => v == null ? 'Please select a role' : null,
       ),
       const SizedBox(height: 4),
       Align(
