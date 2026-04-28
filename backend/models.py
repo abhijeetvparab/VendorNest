@@ -61,6 +61,7 @@ class VendorProfile(Base):
     business_name     = Column(String(150), nullable=False)
     business_type     = Column(String(100), nullable=False)
     business_address  = Column(Text, nullable=False)
+    pincode           = Column(String(10), nullable=True)
     gst_number        = Column(String(15), nullable=True)
     poc_name          = Column(String(100), nullable=False)
     poc_phone         = Column(String(20), nullable=False)

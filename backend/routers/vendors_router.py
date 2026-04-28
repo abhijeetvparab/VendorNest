@@ -128,6 +128,7 @@ def reject_vendor(
 def list_approved_vendors(
     search:        Optional[str] = None,
     business_type: Optional[str] = None,
+    pincode:       Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     q = (
@@ -137,6 +138,8 @@ def list_approved_vendors(
     )
     if business_type:
         q = q.filter(VendorProfile.business_type == business_type)
+    if pincode:
+        q = q.filter(VendorProfile.pincode.ilike(f"%{pincode}%"))
     if search:
         s = f"%{search}%"
         q = q.filter(

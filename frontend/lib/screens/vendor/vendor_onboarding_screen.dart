@@ -14,6 +14,7 @@ class _VendorOnboardingScreenState extends State<VendorOnboardingScreen> {
   final _formKey        = GlobalKey<FormState>();
   final _bizNameCtrl    = TextEditingController();
   final _bizAddrCtrl    = TextEditingController();
+  final _pincodeCtrl    = TextEditingController();
   final _pocNameCtrl    = TextEditingController();
   final _pocPhoneCtrl   = TextEditingController();
   final _pocEmailCtrl   = TextEditingController();
@@ -39,6 +40,7 @@ class _VendorOnboardingScreenState extends State<VendorOnboardingScreen> {
   void _prefill(dynamic p) {
     _bizNameCtrl.text  = p.businessName;
     _bizAddrCtrl.text  = p.businessAddress;
+    _pincodeCtrl.text  = p.pincode ?? '';
     _pocNameCtrl.text  = p.pocName;
     _pocPhoneCtrl.text = p.pocPhone;
     _pocEmailCtrl.text = p.pocEmail;
@@ -50,8 +52,8 @@ class _VendorOnboardingScreenState extends State<VendorOnboardingScreen> {
 
   @override
   void dispose() {
-    for (final c in [_bizNameCtrl,_bizAddrCtrl,_pocNameCtrl,_pocPhoneCtrl,
-                     _pocEmailCtrl,_gstCtrl,_descCtrl,_docNameCtrl]) c.dispose();
+    for (final c in [_bizNameCtrl,_bizAddrCtrl,_pincodeCtrl,_pocNameCtrl,
+                     _pocPhoneCtrl,_pocEmailCtrl,_gstCtrl,_descCtrl,_docNameCtrl]) { c.dispose(); }
     super.dispose();
   }
 
@@ -62,6 +64,7 @@ class _VendorOnboardingScreenState extends State<VendorOnboardingScreen> {
       'business_name':    _bizNameCtrl.text.trim(),
       'business_type':    _bizType,
       'business_address': _bizAddrCtrl.text.trim(),
+      'pincode':          _pincodeCtrl.text.trim().isEmpty ? null : _pincodeCtrl.text.trim(),
       'poc_name':         _pocNameCtrl.text.trim(),
       'poc_phone':        _pocPhoneCtrl.text.trim(),
       'poc_email':        _pocEmailCtrl.text.trim(),
@@ -121,6 +124,7 @@ class _VendorOnboardingScreenState extends State<VendorOnboardingScreen> {
             _OnboardingForm(
               formKey: _formKey,
               bizNameCtrl: _bizNameCtrl, bizAddrCtrl: _bizAddrCtrl,
+              pincodeCtrl: _pincodeCtrl,
               pocNameCtrl: _pocNameCtrl, pocPhoneCtrl: _pocPhoneCtrl,
               pocEmailCtrl: _pocEmailCtrl, gstCtrl: _gstCtrl,
               descCtrl: _descCtrl, docNameCtrl: _docNameCtrl,
@@ -162,8 +166,8 @@ class _StatusBanner extends StatelessWidget {
 
 class _OnboardingForm extends StatelessWidget {
   final GlobalKey<FormState> formKey;
-  final TextEditingController bizNameCtrl, bizAddrCtrl, pocNameCtrl,
-      pocPhoneCtrl, pocEmailCtrl, gstCtrl, descCtrl, docNameCtrl;
+  final TextEditingController bizNameCtrl, bizAddrCtrl, pincodeCtrl,
+      pocNameCtrl, pocPhoneCtrl, pocEmailCtrl, gstCtrl, descCtrl, docNameCtrl;
   final String bizType;
   final List<String> bizTypes;
   final void Function(String) onBizTypeChanged;
@@ -173,6 +177,7 @@ class _OnboardingForm extends StatelessWidget {
   const _OnboardingForm({
     required this.formKey,
     required this.bizNameCtrl, required this.bizAddrCtrl,
+    required this.pincodeCtrl,
     required this.pocNameCtrl, required this.pocPhoneCtrl,
     required this.pocEmailCtrl, required this.gstCtrl,
     required this.descCtrl, required this.docNameCtrl,
@@ -203,6 +208,22 @@ class _OnboardingForm extends StatelessWidget {
           maxLines: 2,
           decoration: const InputDecoration(labelText: 'Business Address *', prefixIcon: Icon(Icons.location_on_outlined)),
           validator: (v) => (v?.trim().isEmpty ?? true) ? 'Required' : null),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: pincodeCtrl,
+          keyboardType: TextInputType.number,
+          maxLength: 6,
+          decoration: const InputDecoration(
+            labelText: 'Pin Code',
+            prefixIcon: Icon(Icons.pin_drop_outlined),
+            counterText: '',
+          ),
+          validator: (v) {
+            if (v == null || v.trim().isEmpty) return null;
+            if (!RegExp(r'^\d{6}$').hasMatch(v.trim())) return 'Enter a valid 6-digit pin code';
+            return null;
+          },
+        ),
         const SizedBox(height: 20),
         _section('Point of Contact'),
         const SizedBox(height: 12),

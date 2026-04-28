@@ -22,4 +22,7 @@ class ApiConfig {
   static String vendorApprove(String id)         => '$baseUrl/api/vendors/onboarding/$id/approve';
   static String vendorReject(String id)          => '$baseUrl/api/vendors/onboarding/$id/reject';
   static const String vendorsApproved            = '$baseUrl/api/vendors/approved';
+
+  static const String products            = '$baseUrl/api/products';
+  static String productById(String id)    => '$baseUrl/api/products/$id';
 }

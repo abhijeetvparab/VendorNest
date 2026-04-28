@@ -6,6 +6,7 @@ class VendorProfile {
   final String   businessName;
   final String   businessType;
   final String   businessAddress;
+  final String?  pincode;
   final String?  gstNumber;
   final String   pocName;
   final String   pocPhone;
@@ -25,6 +26,7 @@ class VendorProfile {
     required this.businessName,
     required this.businessType,
     required this.businessAddress,
+    this.pincode,
     this.gstNumber,
     required this.pocName,
     required this.pocPhone,
@@ -45,6 +47,7 @@ class VendorProfile {
     businessName     : json['business_name']     as String,
     businessType     : json['business_type']     as String,
     businessAddress  : json['business_address']  as String,
+    pincode          : json['pincode']           as String?,
     gstNumber        : json['gst_number']        as String?,
     pocName          : json['poc_name']          as String,
     pocPhone         : json['poc_phone']         as String,

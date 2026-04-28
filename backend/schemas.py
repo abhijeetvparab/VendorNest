@@ -124,6 +124,7 @@ class VendorOnboardingRequest(BaseModel):
     business_name:    str
     business_type:    str
     business_address: str
+    pincode:          Optional[str] = None
     gst_number:       Optional[str] = None
     poc_name:         str
     poc_phone:        str
@@ -156,6 +157,7 @@ class VendorProfileResponse(BaseModel):
     business_name:     str
     business_type:     str
     business_address:  str
+    pincode:           Optional[str]
     gst_number:        Optional[str]
     poc_name:          str
     poc_phone:         str

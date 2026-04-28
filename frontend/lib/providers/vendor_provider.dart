@@ -46,12 +46,13 @@ class VendorProvider extends ChangeNotifier {
   }
 
   // ── Customer: browse approved vendors ─────────────────────────────────────
-  Future<void> loadApprovedVendors({String? search, String? businessType}) async {
+  Future<void> loadApprovedVendors({String? search, String? businessType, String? pincode}) async {
     _setLoading(true);
     try {
       final query = <String, String>{};
       if (search != null && search.isNotEmpty) query['search'] = search;
       if (businessType != null && businessType != 'All') query['business_type'] = businessType;
+      if (pincode != null && pincode.isNotEmpty) query['pincode'] = pincode;
       final data = await ApiService.get(ApiConfig.vendorsApproved, query: query);
       _approvedVendors = (data as List).map((e) => VendorProfile.fromJson(e)).toList();
     } on ApiException catch (e) {
