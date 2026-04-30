@@ -14,12 +14,20 @@ class ProductListScreen extends StatefulWidget {
 }
 
 class _ProductListScreenState extends State<ProductListScreen> {
-  bool _showDeleted = false;
+  bool   _showDeleted  = false;
+  String _searchQuery  = '';
+  final  _searchCtrl   = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -94,6 +102,9 @@ class _ProductListScreenState extends State<ProductListScreen> {
       body: Column(
         children: [
           _FilterBar(
+            searchCtrl: _searchCtrl,
+            searchQuery: _searchQuery,
+            onSearchChanged: (v) => setState(() => _searchQuery = v),
             showDeleted: _showDeleted,
             onToggleDeleted: (v) {
               setState(() => _showDeleted = v);
@@ -103,21 +114,31 @@ class _ProductListScreenState extends State<ProductListScreen> {
           Expanded(
             child: provider.loading
                 ? const Center(child: CircularProgressIndicator())
-                : provider.products.isEmpty
-                    ? _EmptyState(onAdd: () => _openAddEdit())
-                    : RefreshIndicator(
-                        onRefresh: _load,
-                        child: ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-                          itemCount: provider.products.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 10),
-                          itemBuilder: (_, i) => _ProductCard(
-                            product: provider.products[i],
-                            onEdit: () => _openAddEdit(provider.products[i]),
-                            onDelete: () => _delete(provider.products[i]),
-                          ),
+                : Builder(builder: (context) {
+                    var products = _showDeleted
+                        ? provider.products.where((p) => p.isDeleted).toList()
+                        : provider.products;
+                    final q = _searchQuery.trim().toLowerCase();
+                    if (q.isNotEmpty) {
+                      products = products.where((p) =>
+                          p.name.toLowerCase().contains(q) ||
+                          p.unit.toLowerCase().contains(q)).toList();
+                    }
+                    if (products.isEmpty) return _EmptyState(onAdd: () => _openAddEdit());
+                    return RefreshIndicator(
+                      onRefresh: _load,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+                        itemCount: products.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (_, i) => _ProductCard(
+                          product: products[i],
+                          onEdit: () => _openAddEdit(products[i]),
+                          onDelete: () => _delete(products[i]),
                         ),
                       ),
+                    );
+                  }),
           ),
         ],
       ),
@@ -126,25 +147,55 @@ class _ProductListScreenState extends State<ProductListScreen> {
 }
 
 class _FilterBar extends StatelessWidget {
+  final TextEditingController searchCtrl;
+  final String searchQuery;
+  final void Function(String) onSearchChanged;
   final bool showDeleted;
   final void Function(bool) onToggleDeleted;
 
-  const _FilterBar({required this.showDeleted, required this.onToggleDeleted});
+  const _FilterBar({
+    required this.searchCtrl,
+    required this.searchQuery,
+    required this.onSearchChanged,
+    required this.showDeleted,
+    required this.onToggleDeleted,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(children: [
-        const Text('Show deleted',
-            style: TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
-        const Spacer(),
-        Switch(
-          value: showDeleted,
-          onChanged: onToggleDeleted,
-          activeThumbColor: AppTheme.violet,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        TextField(
+          controller: searchCtrl,
+          decoration: InputDecoration(
+            hintText: 'Search by name or unit…',
+            prefixIcon: const Icon(Icons.search, size: 18),
+            suffixIcon: searchQuery.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.close, size: 16),
+                    onPressed: () {
+                      searchCtrl.clear();
+                      onSearchChanged('');
+                    })
+                : null,
+            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+            isDense: true,
+          ),
+          onChanged: onSearchChanged,
         ),
+        const SizedBox(height: 8),
+        Row(children: [
+          const Text('Show deleted',
+              style: TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+          const Spacer(),
+          Switch(
+            value: showDeleted,
+            onChanged: onToggleDeleted,
+            activeThumbColor: AppTheme.violet,
+          ),
+        ]),
       ]),
     );
   }
@@ -228,7 +279,7 @@ class _ProductCard extends StatelessWidget {
               ],
               const SizedBox(height: 8),
               Wrap(spacing: 6, runSpacing: 4, children: [
-                ...product.units.map((u) => _chip(u, AppTheme.violet)),
+                _chip(product.unit, AppTheme.violet),
                 if (product.isAvailable)
                   _chip('Available', Colors.green)
                 else

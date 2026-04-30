@@ -151,6 +151,19 @@ class VendorRejectRequest(BaseModel):
     reason: str
 
 
+class VendorProfileUpdate(BaseModel):
+    business_name:    Optional[str]      = None
+    business_type:    Optional[str]      = None
+    business_address: Optional[str]      = None
+    pincode:          Optional[str]      = None
+    gst_number:       Optional[str]      = None
+    poc_name:         Optional[str]      = None
+    poc_phone:        Optional[str]      = None
+    poc_email:        Optional[EmailStr] = None
+    description:      Optional[str]      = None
+    document_name:    Optional[str]      = None
+
+
 class VendorProfileResponse(BaseModel):
     id:                str
     user_id:           str
@@ -170,6 +183,14 @@ class VendorProfileResponse(BaseModel):
     reviewed_at:       Optional[datetime]
     submitted_at:      datetime
     user:              Optional[UserResponse] = None
+
+    model_config = {"from_attributes": True}
+
+
+class CityResponse(BaseModel):
+    id:    int
+    city:  str
+    state: str
 
     model_config = {"from_attributes": True}
 

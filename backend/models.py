@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import Column, String, Text, DateTime, Integer, Enum, ForeignKey
+from sqlalchemy import Column, String, Text, DateTime, Integer, Enum, ForeignKey, Index
 from sqlalchemy.dialects.mysql import CHAR
 from sqlalchemy.orm import relationship
 from database import Base
@@ -75,3 +75,11 @@ class VendorProfile(Base):
     submitted_at      = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="vendor_profile", foreign_keys=[user_id])
+
+
+class City(Base):
+    __tablename__ = "city"
+
+    id    = Column(Integer, primary_key=True, autoincrement=True)
+    city  = Column(String(100), nullable=False, index=True)
+    state = Column(String(100), nullable=False, index=True)

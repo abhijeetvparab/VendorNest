@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Text, Boolean, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, String, Text, Boolean, DateTime, ForeignKey
 from sqlalchemy.dialects.mysql import CHAR
 from sqlalchemy.orm import relationship
 from database import Base
@@ -18,7 +18,7 @@ class Product(Base):
                              nullable=False, index=True)
     name            = Column(String(150), nullable=False)
     description     = Column(Text, nullable=True)
-    units           = Column(JSON, nullable=False, default=list)
+    unit            = Column(String(50), nullable=False)
     is_available    = Column(Boolean, nullable=False, default=True)
     is_subscribable = Column(Boolean, nullable=False, default=False)
     is_deleted      = Column(Boolean, nullable=False, default=False)

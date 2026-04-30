@@ -62,7 +62,7 @@ def get_product(
     return product
 
 
-@router.put("/{product_id}", response_model=ProductResponse)
+@router.patch("/{product_id}", response_model=ProductResponse)
 def update_product(
     product_id: str,
     data: ProductUpdate,

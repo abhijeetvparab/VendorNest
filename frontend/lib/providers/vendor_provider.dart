@@ -31,6 +31,20 @@ class VendorProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> updateVendorProfile(String token, Map<String, dynamic> payload) async {
+    _setLoading(true);
+    try {
+      final data = await ApiService.patch(ApiConfig.vendorOnboardingMine, payload, token: token);
+      _myProfile = VendorProfile.fromJson(data);
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _error = e.message; notifyListeners(); return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   Future<bool> submitOnboarding(String token, Map<String, dynamic> payload) async {
     _setLoading(true);
     try {

@@ -104,7 +104,10 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
   }
 
   List<Product> get _filteredProducts {
-    final products = context.read<ProductProvider>().products;
+    var products = context.read<ProductProvider>().products;
+    if (_showDeleted) {
+      products = products.where((p) => p.isDeleted).toList();
+    }
     final q = _productSearch.toLowerCase();
     if (q.isEmpty) return products;
     return products.where((p) =>
@@ -602,8 +605,7 @@ class _AdminProductCard extends StatelessWidget {
                   ],
                   const SizedBox(height: 8),
                   Wrap(spacing: 6, runSpacing: 4, children: [
-                    ...product.units
-                        .map((u) => _chip(u, const Color(0xFF6366F1))),
+                    _chip(product.unit, const Color(0xFF6366F1)),
                     if (product.isAvailable)
                       _chip('Available', Colors.green)
                     else

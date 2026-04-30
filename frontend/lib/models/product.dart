@@ -1,21 +1,21 @@
 class Product {
-  final String        id;
-  final String        vendorId;
-  final String        name;
-  final String?       description;
-  final List<String>  units;
-  final bool          isAvailable;
-  final bool          isSubscribable;
-  final bool          isDeleted;
-  final String        createdAt;
-  final String        updatedAt;
+  final String  id;
+  final String  vendorId;
+  final String  name;
+  final String? description;
+  final String  unit;
+  final bool    isAvailable;
+  final bool    isSubscribable;
+  final bool    isDeleted;
+  final String  createdAt;
+  final String  updatedAt;
 
   const Product({
     required this.id,
     required this.vendorId,
     required this.name,
     this.description,
-    required this.units,
+    required this.unit,
     required this.isAvailable,
     required this.isSubscribable,
     required this.isDeleted,
@@ -28,7 +28,7 @@ class Product {
     vendorId:       json['vendor_id']       as String,
     name:           json['name']            as String,
     description:    json['description']     as String?,
-    units:          List<String>.from(json['units'] as List),
+    unit:           json['unit']            as String,
     isAvailable:    json['is_available']    as bool,
     isSubscribable: json['is_subscribable'] as bool,
     isDeleted:      json['is_deleted']      as bool,
@@ -41,7 +41,7 @@ class Product {
     'vendor_id':       vendorId,
     'name':            name,
     'description':     description,
-    'units':           units,
+    'unit':            unit,
     'is_available':    isAvailable,
     'is_subscribable': isSubscribable,
     'is_deleted':      isDeleted,

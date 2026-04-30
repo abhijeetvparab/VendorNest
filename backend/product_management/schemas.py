@@ -6,7 +6,7 @@ from pydantic import BaseModel, field_validator
 class ProductCreate(BaseModel):
     name:            str
     description:     Optional[str] = None
-    units:           list[str]
+    unit:            str
     is_available:    bool = True
     is_subscribable: bool = False
 
@@ -17,13 +17,12 @@ class ProductCreate(BaseModel):
             raise ValueError("Product name cannot be empty")
         return v.strip()
 
-    @field_validator("units")
+    @field_validator("unit")
     @classmethod
-    def units_valid(cls, v: list) -> list:
-        cleaned = [u.strip() for u in v if u.strip()]
-        if not cleaned:
-            raise ValueError("At least one unit is required")
-        return cleaned
+    def unit_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Unit cannot be empty")
+        return v.strip()
 
     @field_validator("description")
     @classmethod
@@ -34,12 +33,12 @@ class ProductCreate(BaseModel):
 
 
 class ProductUpdate(BaseModel):
-    name:            Optional[str]       = None
-    description:     Optional[str]       = None
-    units:           Optional[list[str]] = None
-    is_available:    Optional[bool]      = None
-    is_subscribable: Optional[bool]      = None
-    is_deleted:      Optional[bool]      = None
+    name:            Optional[str]  = None
+    description:     Optional[str]  = None
+    unit:            Optional[str]  = None
+    is_available:    Optional[bool] = None
+    is_subscribable: Optional[bool] = None
+    is_deleted:      Optional[bool] = None
 
 
 class ProductResponse(BaseModel):
@@ -47,7 +46,7 @@ class ProductResponse(BaseModel):
     vendor_id:       str
     name:            str
     description:     Optional[str]
-    units:           list[str]
+    unit:            str
     is_available:    bool
     is_subscribable: bool
     is_deleted:      bool

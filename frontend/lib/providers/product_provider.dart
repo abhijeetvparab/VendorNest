@@ -57,7 +57,7 @@ class ProductProvider extends ChangeNotifier {
       String token, String id, Map<String, dynamic> payload) async {
     _setLoading(true);
     try {
-      final data = await ApiService.put(
+      final data = await ApiService.patch(
           ApiConfig.productById(id), payload, token: token);
       final updated = Product.fromJson(data);
       final idx = _products.indexWhere((p) => p.id == id);
@@ -76,6 +76,7 @@ class ProductProvider extends ChangeNotifier {
   // ── Soft Delete ───────────────────────────────────────────────────────────
 
   Future<bool> softDeleteProduct(String token, String id) async {
+    _setLoading(true);
     try {
       await ApiService.delete(ApiConfig.productById(id), token: token);
       _products.removeWhere((p) => p.id == id);
@@ -85,6 +86,8 @@ class ProductProvider extends ChangeNotifier {
       _error = e.message;
       notifyListeners();
       return false;
+    } finally {
+      _setLoading(false);
     }
   }
 

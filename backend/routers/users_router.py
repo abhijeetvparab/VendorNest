@@ -2,14 +2,19 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
-from models import User, UserRole, UserStatus
+from models import User, UserRole, UserStatus, City
 from schemas import (
     UserResponse, UserUpdate, UserStatusUpdate,
-    CreateAdminRequest,
+    CreateAdminRequest, CityResponse,
 )
 from auth import get_current_user, require_admin, hash_password
 
 router = APIRouter(prefix="/api/users", tags=["Users"])
+
+
+@router.get("/cities", response_model=List[CityResponse])
+def list_cities(db: Session = Depends(get_db)):
+    return db.query(City).order_by(City.city).all()
 
 
 @router.get("", response_model=List[UserResponse])

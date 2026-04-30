@@ -18,16 +18,17 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
   final _formKey  = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
-  final _customUnitCtrl = TextEditingController();
 
+  // Add mode: multiple units → one product per unit
   List<String> _selectedUnits = [];
+  // Edit mode: single unit
+  String? _editUnit;
+
   bool _isAvailable    = true;
   bool _isSubscribable = false;
-  bool _unitsError     = false;
 
   bool get _isEdit => widget.product != null;
 
-  // Predefined common unit suggestions
   static const List<String> _suggestedUnits = [
     '100 G', '250 G', '500 G', '1 Kg', '2 Kg', '5 Kg',
     '100 ML', '250 ML', '500 ML', '1 Ltr', '2 Ltr', '5 Ltr',
@@ -39,11 +40,11 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
     super.initState();
     final p = widget.product;
     if (p != null) {
-      _nameCtrl.text   = p.name;
-      _descCtrl.text   = p.description ?? '';
-      _selectedUnits   = List<String>.from(p.units);
-      _isAvailable     = p.isAvailable;
-      _isSubscribable  = p.isSubscribable;
+      _nameCtrl.text  = p.name;
+      _descCtrl.text  = p.description ?? '';
+      _editUnit       = p.unit;
+      _isAvailable    = p.isAvailable;
+      _isSubscribable = p.isSubscribable;
     }
   }
 
@@ -51,64 +52,155 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
   void dispose() {
     _nameCtrl.dispose();
     _descCtrl.dispose();
-    _customUnitCtrl.dispose();
     super.dispose();
   }
 
-  void _toggleUnit(String unit) {
-    setState(() {
-      if (_selectedUnits.contains(unit)) {
-        _selectedUnits.remove(unit);
-      } else {
-        _selectedUnits.add(unit);
-      }
-      if (_selectedUnits.isNotEmpty) _unitsError = false;
-    });
-  }
-
-  void _addCustomUnit() {
-    final v = _customUnitCtrl.text.trim();
-    if (v.isEmpty) return;
-    if (!_selectedUnits.contains(v)) {
-      setState(() {
-        _selectedUnits.add(v);
-        _unitsError = false;
-      });
+  Future<void> _openUnitPickerDialog() async {
+    final tempSelected = List<String>.from(_selectedUnits);
+    final customCtrl   = TextEditingController();
+    final allUnits     = List<String>.from(_suggestedUnits);
+    for (final u in tempSelected) {
+      if (!allUnits.contains(u)) allUnits.add(u);
     }
-    _customUnitCtrl.clear();
-  }
 
-  void _removeUnit(String unit) => setState(() => _selectedUnits.remove(unit));
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Select Available Units',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: allUnits.length,
+                    itemBuilder: (_, i) {
+                      final u = allUnits[i];
+                      return CheckboxListTile(
+                        value: tempSelected.contains(u),
+                        title: Text(u, style: const TextStyle(fontSize: 14)),
+                        activeColor: AppTheme.violet,
+                        dense: true,
+                        onChanged: (v) => setDialogState(() {
+                          if (v == true) {
+                            tempSelected.add(u);
+                          } else {
+                            tempSelected.remove(u);
+                          }
+                        }),
+                      );
+                    },
+                  ),
+                ),
+                const Divider(height: 16),
+                Row(children: [
+                  Expanded(
+                    child: TextField(
+                      controller: customCtrl,
+                      decoration: const InputDecoration(
+                        hintText: 'Custom unit (e.g. 750 ML)',
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: () {
+                      final v = customCtrl.text.trim();
+                      if (v.isEmpty) return;
+                      setDialogState(() {
+                        if (!allUnits.contains(v)) allUnits.add(v);
+                        if (!tempSelected.contains(v)) tempSelected.add(v);
+                        customCtrl.clear();
+                      });
+                    },
+                    child: const Text('Add'),
+                  ),
+                ]),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                setState(() => _selectedUnits = List<String>.from(tempSelected));
+              },
+              style: FilledButton.styleFrom(backgroundColor: AppTheme.violet),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedUnits.isEmpty) {
-      setState(() => _unitsError = true);
-      return;
-    }
 
     final token    = context.read<AuthProvider>().accessToken!;
     final provider = context.read<ProductProvider>();
-    final payload  = {
-      'name':            _nameCtrl.text.trim(),
-      'description':     _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
-      'units':           _selectedUnits,
-      'is_available':    _isAvailable,
-      'is_subscribable': _isSubscribable,
-    };
 
-    final ok = _isEdit
-        ? await provider.updateProduct(token, widget.product!.id, payload)
-        : await provider.createProduct(token, payload);
-
-    if (!mounted) return;
-    if (ok) {
-      Navigator.pop(context, true);
+    if (_isEdit) {
+      if (_editUnit == null || _editUnit!.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Please select a unit'),
+          backgroundColor: AppTheme.rose,
+        ));
+        return;
+      }
+      final ok = await provider.updateProduct(token, widget.product!.id, {
+        'name':            _nameCtrl.text.trim(),
+        'description':     _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
+        'unit':            _editUnit,
+        'is_available':    _isAvailable,
+        'is_subscribable': _isSubscribable,
+      });
+      if (!mounted) return;
+      if (ok) {
+        Navigator.pop(context, true);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(provider.error ?? 'Failed to save product'),
+          backgroundColor: AppTheme.rose,
+        ));
+      }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(provider.error ?? 'Failed to save product'),
-        backgroundColor: AppTheme.rose,
-      ));
+      if (_selectedUnits.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Please select at least one unit'),
+          backgroundColor: AppTheme.rose,
+        ));
+        return;
+      }
+      bool anyFailed = false;
+      for (final unit in _selectedUnits) {
+        final ok = await provider.createProduct(token, {
+          'name':            _nameCtrl.text.trim(),
+          'description':     _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
+          'unit':            unit,
+          'is_available':    _isAvailable,
+          'is_subscribable': _isSubscribable,
+        });
+        if (!ok) anyFailed = true;
+      }
+      if (!mounted) return;
+      if (!anyFailed) {
+        Navigator.pop(context, true);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(provider.error ?? 'Failed to create some products'),
+          backgroundColor: AppTheme.rose,
+        ));
+      }
     }
   }
 
@@ -205,9 +297,30 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
   }
 
   Widget _buildUnitsSection() {
-    final unselected = _suggestedUnits
-        .where((u) => !_selectedUnits.contains(u))
-        .toList();
+    if (_isEdit) {
+      final allUnits = List<String>.from(_suggestedUnits);
+      if (_editUnit != null && !allUnits.contains(_editUnit)) {
+        allUnits.insert(0, _editUnit!);
+      }
+      return _sectionCard(
+        title: 'Available Unit',
+        icon: Icons.straighten_outlined,
+        children: [
+          DropdownButtonFormField<String>(
+            initialValue: _editUnit,
+            decoration: const InputDecoration(
+              labelText: 'Unit *',
+              prefixIcon: Icon(Icons.straighten_outlined),
+            ),
+            items: allUnits
+                .map((u) => DropdownMenuItem(value: u, child: Text(u)))
+                .toList(),
+            onChanged: (v) => setState(() => _editUnit = v),
+            validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
+          ),
+        ],
+      );
+    }
 
     return Container(
       width: double.infinity,
@@ -215,100 +328,90 @@ class _AddEditProductScreenState extends State<AddEditProductScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: _unitsError ? AppTheme.rose : const Color(0xFFE5E7EB),
-        ),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Row(children: [
-          Icon(Icons.straighten_outlined, size: 16, color: AppTheme.violet),
-          SizedBox(width: 8),
-          Text('Available Units',
+        Row(children: [
+          const Icon(Icons.straighten_outlined, size: 16, color: AppTheme.violet),
+          const SizedBox(width: 8),
+          const Text('Available Units',
               style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF374151))),
-          Spacer(),
-          Text('tap to add / remove',
-              style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+          const Spacer(),
+          if (_selectedUnits.isNotEmpty)
+            Text('${_selectedUnits.length} selected',
+                style: const TextStyle(
+                    fontSize: 11,
+                    color: AppTheme.violet,
+                    fontWeight: FontWeight.w600)),
         ]),
-        if (_unitsError) ...[
-          const SizedBox(height: 6),
-          const Text('At least one unit is required',
-              style: TextStyle(fontSize: 12, color: AppTheme.rose)),
-        ],
-
-        // Selected units
-        if (_selectedUnits.isNotEmpty) ...[
-          const SizedBox(height: 14),
-          const Text('Selected',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF6B7280))),
-          const SizedBox(height: 8),
-          Wrap(spacing: 8, runSpacing: 6, children: _selectedUnits.map((u) => _selectedChip(u)).toList()),
-        ],
-
-        // Quick-add suggestions
-        if (unselected.isNotEmpty) ...[
-          const SizedBox(height: 14),
-          const Text('Quick add',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF6B7280))),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: unselected.map((u) => _suggestionChip(u)).toList(),
-          ),
-        ],
-
-        // Custom unit input
-        const SizedBox(height: 16),
-        const Text('Custom unit',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF6B7280))),
-        const SizedBox(height: 8),
-        Row(children: [
-          Expanded(
-            child: TextFormField(
-              controller: _customUnitCtrl,
-              decoration: const InputDecoration(
-                hintText: 'e.g. 750 ML, Half Ltr…',
-                prefixIcon: Icon(Icons.add_circle_outline, size: 18),
-                isDense: true,
+        const SizedBox(height: 4),
+        const Text(
+          'One product will be created for each selected unit',
+          style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+        ),
+        const SizedBox(height: 12),
+        GestureDetector(
+          onTap: _openUnitPickerDialog,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            decoration: BoxDecoration(
+              border: Border.all(color: const Color(0xFFD1D5DB)),
+              borderRadius: BorderRadius.circular(10),
+              color: const Color(0xFFF9FAFB),
+            ),
+            child: Row(children: [
+              const Icon(Icons.checklist_outlined,
+                  size: 18, color: Color(0xFF9CA3AF)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _selectedUnits.isEmpty
+                      ? 'Tap to select units…'
+                      : _selectedUnits.join(', '),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: _selectedUnits.isEmpty
+                        ? const Color(0xFF9CA3AF)
+                        : const Color(0xFF1F2937),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              onFieldSubmitted: (_) => _addCustomUnit(),
-            ),
+              const Icon(Icons.arrow_drop_down, color: Color(0xFF6B7280)),
+            ]),
           ),
-          const SizedBox(width: 10),
-          FilledButton(
-            onPressed: _addCustomUnit,
-            style: FilledButton.styleFrom(
-              backgroundColor: AppTheme.violet,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            ),
-            child: const Text('Add'),
+        ),
+        if (_selectedUnits.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: _selectedUnits
+                .map((u) => Chip(
+                      label: Text(u,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white)),
+                      backgroundColor: AppTheme.violet,
+                      deleteIconColor: Colors.white70,
+                      onDeleted: () =>
+                          setState(() => _selectedUnits.remove(u)),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      padding: EdgeInsets.zero,
+                      labelPadding:
+                          const EdgeInsets.symmetric(horizontal: 6),
+                    ))
+                .toList(),
           ),
-        ]),
+        ],
       ]),
     );
   }
-
-  Widget _selectedChip(String label) => InputChip(
-    label: Text(label,
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
-    backgroundColor: AppTheme.violet,
-    deleteIconColor: Colors.white70,
-    onDeleted: () => _removeUnit(label),
-    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-  );
-
-  Widget _suggestionChip(String label) => ActionChip(
-    label: Text(label,
-        style: const TextStyle(fontSize: 12, color: Color(0xFF374151))),
-    avatar: const Icon(Icons.add, size: 14, color: Color(0xFF6B7280)),
-    backgroundColor: const Color(0xFFF3F4F6),
-    side: const BorderSide(color: Color(0xFFE5E7EB)),
-    onPressed: () => _toggleUnit(label),
-    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-  );
 
   Widget _sectionCard({
     required String title,

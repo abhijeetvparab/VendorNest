@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import User, VendorProfile, OnboardingStatus, UserRole, UserStatus
 from schemas import (
-    VendorOnboardingRequest, VendorProfileResponse, VendorRejectRequest,
+    VendorOnboardingRequest, VendorProfileResponse, VendorRejectRequest, VendorProfileUpdate,
 )
 from auth import get_current_user, require_admin
 
@@ -61,6 +61,24 @@ def get_my_onboarding(
     profile = db.query(VendorProfile).filter(VendorProfile.user_id == current_user.id).first()
     if not profile:
         raise HTTPException(status_code=404, detail="No onboarding submission found")
+    return profile
+
+
+@router.patch("/onboarding/mine", response_model=VendorProfileResponse)
+def update_my_onboarding(
+    data: VendorProfileUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.role != UserRole.VENDOR:
+        raise HTTPException(status_code=403, detail="Only vendors can update their profile")
+    profile = db.query(VendorProfile).filter(VendorProfile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="No onboarding submission found")
+    for k, v in data.model_dump(exclude_unset=True).items():
+        setattr(profile, k, v)
+    db.commit()
+    db.refresh(profile)
     return profile
 
 

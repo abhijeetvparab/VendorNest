@@ -32,6 +32,13 @@ class _MainShellState extends State<MainShell> {
   String  _activePage = 'dashboard';
   String? _navRole;
 
+  @override
+  void initState() {
+    super.initState();
+    final role = context.read<AuthProvider>().role;
+    if (role == 'Vendor') _activePage = 'profile';
+  }
+
   // Admin nav only holds non-grouped items — vendors/products live in the sidebar group.
   // Length > 4 keeps bottom nav hidden for admin (they use the drawer).
   static const List<_NavItem> _adminNav = [
@@ -42,10 +49,10 @@ class _MainShellState extends State<MainShell> {
     _NavItem('profile',   'My Profile',         Icons.person_outline),
   ];
   static const List<_NavItem> _vendorNav = [
+    _NavItem('profile',    'My Profile',    Icons.person_outline),
     _NavItem('dashboard',  'Dashboard',     Icons.home_outlined),
     _NavItem('onboarding', 'My Onboarding', Icons.assignment_outlined),
     _NavItem('products',   'My Products',   Icons.inventory_2_outlined),
-    _NavItem('profile',    'My Profile',    Icons.person_outline),
   ];
   static const List<_NavItem> _customerNav = [
     _NavItem('dashboard', 'Dashboard',      Icons.home_outlined),
