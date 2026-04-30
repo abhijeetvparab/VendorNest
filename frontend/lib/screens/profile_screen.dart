@@ -34,8 +34,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // Business (vendor only)
   final _bizNameCtrl  = TextEditingController();
-  final _bizAddrCtrl  = TextEditingController();
-  final _bizPinCtrl   = TextEditingController();
   final _pocNameCtrl  = TextEditingController();
   final _pocPhoneCtrl = TextEditingController();
   final _pocEmailCtrl = TextEditingController();
@@ -99,8 +97,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final p = context.read<VendorProvider>().myProfile;
     if (p == null) return;
     _bizNameCtrl.text  = p.businessName;
-    _bizAddrCtrl.text  = p.businessAddress;
-    _bizPinCtrl.text   = p.pincode ?? '';
     _pocNameCtrl.text  = p.pocName;
     _pocPhoneCtrl.text = p.pocPhone;
     _pocEmailCtrl.text = p.pocEmail;
@@ -132,7 +128,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     for (final c in [
       _firstCtrl, _lastCtrl, _phoneCtrl,
       _addr1Ctrl, _addr2Ctrl, _cityCtrl, _stateCtrl, _pinCtrl,
-      _bizNameCtrl, _bizAddrCtrl, _bizPinCtrl,
+      _bizNameCtrl,
       _pocNameCtrl, _pocPhoneCtrl, _pocEmailCtrl,
       _gstCtrl, _descCtrl,
     ]) { c.dispose(); }
@@ -240,8 +236,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ok = await vendor.updateVendorProfile(auth.accessToken ?? '', {
         'business_name':    _bizNameCtrl.text.trim(),
         'business_type':    _bizType,
-        'business_address': _bizAddrCtrl.text.trim(),
-        'pincode':   _bizPinCtrl.text.trim().isEmpty ? null : _bizPinCtrl.text.trim(),
         'gst_number':_gstCtrl.text.trim().isEmpty    ? null : _gstCtrl.text.trim(),
         'poc_name':  _pocNameCtrl.text.trim(),
         'poc_phone': _pocPhoneCtrl.text.trim(),
@@ -439,27 +433,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onChanged: (v) => setState(() => _bizType = v!)),
                     const SizedBox(height: 12),
                     TextFormField(
-                      controller: _bizAddrCtrl,
-                      maxLines: 2,
-                      decoration: const InputDecoration(
-                        labelText: 'Business Address *',
-                        prefixIcon: Icon(Icons.location_on_outlined),
-                        alignLabelWithHint: true),
-                      validator: (v) =>
-                          (v?.trim().isEmpty ?? true) ? 'Required' : null),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _bizPinCtrl,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(6),
-                      ],
-                      decoration: const InputDecoration(
-                        labelText: 'Pin Code',
-                        prefixIcon: Icon(Icons.pin_drop_outlined))),
-                    const SizedBox(height: 12),
-                    TextFormField(
                       controller: _gstCtrl,
                       textCapitalization: TextCapitalization.characters,
                       decoration: const InputDecoration(
@@ -495,7 +468,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       validator: (v) {
                         if (v == null || v.trim().isEmpty) return 'Required';
                         if (!RegExp(r'^[\w.+\-]+@[\w\-]+\.[\w.]+$')
-                            .hasMatch(v.trim())) return 'Invalid email';
+                            .hasMatch(v.trim())) { return 'Invalid email'; }
                         return null;
                       }),
                     const SizedBox(height: 12),
@@ -664,15 +637,13 @@ class _VendorBusinessCard extends StatelessWidget {
         const Divider(height: 20),
         _row('Business Name', profile.businessName),
         _row('Business Type', profile.businessType),
-        _row('Address',       profile.businessAddress),
-        if (profile.pincode != null && profile.pincode!.isNotEmpty)
-          _row('Pin Code', profile.pincode!),
+        ..._addressRows(context.watch<AuthProvider>().user?.address ?? ''),
         _row('POC Name',  profile.pocName),
         _row('POC Phone', profile.pocPhone),
         _row('POC Email', profile.pocEmail),
         _row('GST Number', profile.gstNumber ?? '—'),
         if (profile.description != null && profile.description!.isNotEmpty)
-          _row('Description', profile.description!),
+          _blockRow('Description', profile.description!),
       ]),
     );
   }
@@ -689,4 +660,38 @@ class _VendorBusinessCard extends StatelessWidget {
           overflow: TextOverflow.ellipsis)),
     ]),
   );
+
+  Widget _blockRow(String label, String value) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(label,
+          style: const TextStyle(color: Colors.grey, fontSize: 13)),
+      const SizedBox(height: 3),
+      Text(value,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+    ]),
+  );
+
+  List<Widget> _addressRows(String address) {
+    if (address.isEmpty) return [];
+    final parts = address.split(', ');
+    String addr1 = '', addr2 = '', city = '', state = '', pin = '';
+    if (parts.length >= 3 && RegExp(r'^[1-9][0-9]{5}$').hasMatch(parts.last)) {
+      pin   = parts.last;
+      state = parts[parts.length - 2];
+      city  = parts[parts.length - 3];
+      final addrParts = parts.sublist(0, parts.length - 3);
+      addr1 = addrParts.isNotEmpty ? addrParts.first : '';
+      addr2 = addrParts.length > 1 ? addrParts.sublist(1).join(', ') : '';
+    } else {
+      addr1 = address;
+    }
+    return [
+      if (addr1.isNotEmpty) _row('Address Line 1', addr1),
+      if (addr2.isNotEmpty) _row('Address Line 2', addr2),
+      if (city.isNotEmpty)  _row('City',           city),
+      if (state.isNotEmpty) _row('State',          state),
+      if (pin.isNotEmpty)   _row('Pincode',        pin),
+    ];
+  }
 }
