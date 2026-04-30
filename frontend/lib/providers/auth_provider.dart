@@ -132,5 +132,5 @@ class AuthProvider extends ChangeNotifier {
     await prefs.remove('refresh_token');
   }
 
-  void _setLoading(bool v) { _loading = v; _error = null; notifyListeners(); }
+  void _setLoading(bool v) { _loading = v; if (v) _error = null; notifyListeners(); }
 }

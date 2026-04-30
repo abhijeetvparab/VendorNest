@@ -27,7 +27,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _gstCtrl     = TextEditingController();
   final _emailCtrl   = TextEditingController();
   final _passCtrl    = TextEditingController();
-  final _confirmCtrl = TextEditingController();
+  final _confirmCtrl  = TextEditingController();
+  final _cityMenuCtrl = TextEditingController();
 
   String  _selectedRole = 'Vendor';
   bool    _obscurePass  = true;
@@ -45,13 +46,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void initState() {
     super.initState();
     _loadCities();
+    _cityMenuCtrl.addListener(() {
+      if (_selectedCity != null && _cityMenuCtrl.text != _selectedCity) {
+        setState(() {
+          _selectedCity = null;
+          _stateCtrl.clear();
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
     for (final c in [_firstCtrl, _lastCtrl, _phoneCtrl,
                      _addr1Ctrl, _addr2Ctrl, _stateCtrl, _pinCtrl,
-                     _gstCtrl, _emailCtrl, _passCtrl, _confirmCtrl]) {
+                     _gstCtrl, _emailCtrl, _passCtrl, _confirmCtrl,
+                     _cityMenuCtrl]) {
       c.dispose();
     }
     super.dispose();
@@ -81,72 +91,41 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
-  Widget _cityDropdown() => Autocomplete<String>(
-    optionsBuilder: (TextEditingValue tv) {
-      final q = tv.text.toLowerCase();
-      if (q.isEmpty) return _cities.map((c) => c['city']!);
-      return _cities
-          .where((c) => c['city']!.toLowerCase().contains(q))
-          .map((c) => c['city']!);
-    },
-    onSelected: (String city) {
-      final match = _cities.firstWhere((c) => c['city'] == city);
-      setState(() {
-        _selectedCity   = city;
-        _stateCtrl.text = match['state']!;
-      });
-      _formKey.currentState?.validate();
-    },
-    fieldViewBuilder: (context, ctrl, focusNode, _) => TextFormField(
-      controller:       ctrl,
-      focusNode:        focusNode,
-      autovalidateMode: AutovalidateMode.onUserInteraction,
-      decoration: InputDecoration(
-        labelText:   'City *',
-        suffixIcon:  _citiesLoading
-            ? const Padding(
-                padding: EdgeInsets.all(12),
-                child: SizedBox(width: 16, height: 16,
+  Widget _cityDropdown() => FormField<String>(
+    autovalidateMode: AutovalidateMode.onUserInteraction,
+    validator: (_) =>
+        _selectedCity == null && _hasAttempted ? 'City is required' : null,
+    builder: (state) => DropdownMenu<String>(
+      controller:        _cityMenuCtrl,
+      enableSearch:      true,
+      requestFocusOnTap: true,
+      expandedInsets:    EdgeInsets.zero,
+      label:             const Text('City *'),
+      errorText:         state.errorText,
+      trailingIcon: _citiesLoading
+          ? const Padding(
+              padding: EdgeInsets.all(12),
+              child: SizedBox(width: 16, height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2)))
-            : const Icon(Icons.keyboard_arrow_down_rounded,
-                size: 20, color: Colors.grey),
-      ),
-      validator: (_) =>
-          _selectedCity == null && _hasAttempted ? 'City is required' : null,
-      onChanged: (v) {
-        if (_selectedCity != null && v != _selectedCity) {
-          setState(() {
-            _selectedCity   = null;
-            _stateCtrl.clear();
-          });
-        }
+          : const Icon(Icons.keyboard_arrow_down_rounded,
+              size: 20, color: Colors.grey),
+      filterCallback: (entries, filter) => entries
+          .where((e) => e.label.toLowerCase().contains(filter.toLowerCase()))
+          .toList(),
+      onSelected: (String? city) {
+        if (city == null) return;
+        final match = _cities.firstWhere((c) => c['city'] == city);
+        setState(() {
+          _selectedCity   = city;
+          _stateCtrl.text = match['state']!;
+        });
+        state.didChange(city);
+        _formKey.currentState?.validate();
       },
-    ),
-    optionsViewBuilder: (context, onSelected, options) => Align(
-      alignment: Alignment.topLeft,
-      child: Material(
-        elevation:     8,
-        borderRadius:  BorderRadius.circular(12),
-        color:         Colors.white,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 240),
-          child: ListView.builder(
-            shrinkWrap:  true,
-            padding:     EdgeInsets.zero,
-            itemCount:   options.length,
-            itemBuilder: (context, i) {
-              final city = options.elementAt(i);
-              return InkWell(
-                onTap: () => onSelected(city),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Text(city, style: const TextStyle(fontSize: 14)),
-                ),
-              );
-            },
-          ),
-        ),
-      ),
+      dropdownMenuEntries: _cities
+          .map((c) => DropdownMenuEntry<String>(
+              value: c['city']!, label: c['city']!))
+          .toList(),
     ),
   );
 

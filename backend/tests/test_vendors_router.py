@@ -1,3 +1,6 @@
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
+
 import pytest
 from conftest import auth_header
 from models import UserRole, UserStatus, VendorProfile, OnboardingStatus

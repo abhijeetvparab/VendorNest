@@ -148,7 +148,7 @@ class _LoginScreenState extends State<LoginScreen> {
       const SizedBox(height: 8),
       GradientButton(label: 'Sign In', loading: auth.loading, onPressed: _submit),
       const SizedBox(height: 20),
-      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+      Wrap(alignment: WrapAlignment.center, children: [
         const Text("Don't have an account? ", style: TextStyle(color: Colors.grey)),
         GestureDetector(
           onTap: () => Navigator.pushNamed(context, '/register'),

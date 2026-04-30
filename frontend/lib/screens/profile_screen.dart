@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../app_theme.dart';
 import '../config/api_config.dart';
+import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/vendor_provider.dart';
 import '../widgets/gradient_button.dart';
@@ -28,9 +29,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _pinCtrl   = TextEditingController();
 
   String?                   _selectedCity;
-  List<Map<String, String>> _cities        = [];
-  bool                      _citiesLoading = false;
-  bool                      _editing       = false;
+  List<Map<String, String>> _cities           = [];
+  List<Map<String, String>> _filteredCities   = [];
+  bool                      _citiesLoading    = false;
+  bool                      _editing          = false;
+  bool                      _cityError        = false;
+  bool                      _showCityList     = false;
+  final _cityFocusNode = FocusNode();
 
   // Business (vendor only)
   final _bizNameCtrl  = TextEditingController();
@@ -51,6 +56,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     _prefill();
     _loadCities();
+    _cityFocusNode.addListener(() {
+      if (!_cityFocusNode.hasFocus && mounted) {
+        setState(() => _showCityList = false);
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = context.read<AuthProvider>();
       if (auth.user?.role == 'Vendor') {
@@ -125,6 +135,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   void dispose() {
+    _cityFocusNode.dispose();
     for (final c in [
       _firstCtrl, _lastCtrl, _phoneCtrl,
       _addr1Ctrl, _addr2Ctrl, _cityCtrl, _stateCtrl, _pinCtrl,
@@ -146,80 +157,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return parts.where((p) => p.isNotEmpty).join(', ');
   }
 
-  Future<void> _openCityPicker() async {
-    final searchCtrl = TextEditingController();
-    var filtered = List<Map<String, String>>.from(_cities);
-
-    final selected = await showDialog<String>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('Select City',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              TextField(
-                controller: searchCtrl,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: 'Search city…',
-                  prefixIcon: Icon(Icons.search, size: 18),
-                  isDense: true,
-                ),
-                onChanged: (q) => setDialogState(() {
-                  filtered = _cities
-                      .where((c) => c['city']!.toLowerCase().contains(q.toLowerCase()))
-                      .toList();
-                }),
-              ),
-              const SizedBox(height: 8),
-              Flexible(
-                child: filtered.isEmpty
-                    ? const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Text('No cities found',
-                            style: TextStyle(color: Colors.grey)))
-                    : ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: filtered.length,
-                        itemBuilder: (_, i) => ListTile(
-                          title: Text(filtered[i]['city']!,
-                              style: const TextStyle(fontSize: 14)),
-                          subtitle: Text(filtered[i]['state']!,
-                              style: const TextStyle(fontSize: 12)),
-                          dense: true,
-                          selected: _selectedCity == filtered[i]['city'],
-                          selectedColor: AppTheme.violet,
-                          onTap: () => Navigator.pop(ctx, filtered[i]['city']),
-                        ),
-                      ),
-              ),
-            ]),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (selected != null && mounted) {
-      final match = _cities.firstWhere((c) => c['city'] == selected);
-      setState(() {
-        _selectedCity   = selected;
-        _cityCtrl.text  = selected;
-        _stateCtrl.text = match['state']!;
-      });
-      _formKey.currentState?.validate();
-    }
-  }
-
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    final cityOk = _selectedCity != null;
+    setState(() => _cityError = !cityOk);
+    if (!_formKey.currentState!.validate() || !cityOk) return;
 
     final auth     = context.read<AuthProvider>();
     final vendor   = context.read<VendorProvider>();
@@ -502,6 +443,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
           ] else ...[
+            _PersonalDetailsCard(u),
+            const SizedBox(height: 16),
             _InfoCard('Account Details', [
               ['Role',         u.role],
               ['Status',       u.status],
@@ -540,23 +483,161 @@ class _ProfileScreenState extends State<ProfileScreen> {
         fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF374151)),
   );
 
-  Widget _cityField() => TextFormField(
-    controller: _cityCtrl,
-    readOnly: true,
-    onTap: _citiesLoading ? null : _openCityPicker,
-    decoration: InputDecoration(
-      labelText: 'City *',
-      prefixIcon: const Icon(Icons.location_city_outlined),
-      suffixIcon: _citiesLoading
-          ? const Padding(
-              padding: EdgeInsets.all(12),
-              child: SizedBox(
-                  width: 16, height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2)))
-          : const Icon(Icons.keyboard_arrow_down_rounded,
-              size: 20, color: Colors.grey),
-    ),
-    validator: (_) => _selectedCity == null ? 'City is required' : null,
+  Widget _cityField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextFormField(
+          controller: _cityCtrl,
+          focusNode:  _cityFocusNode,
+          decoration: InputDecoration(
+            labelText: 'City *',
+            prefixIcon: const Icon(Icons.location_city_outlined),
+            suffixIcon: _citiesLoading
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2)))
+                : Icon(
+                    _showCityList
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 20, color: Colors.grey),
+            errorText: _cityError ? 'City is required' : null,
+          ),
+          onTap: () {
+            setState(() {
+              _filteredCities = _cities;
+              _showCityList   = true;
+            });
+          },
+          onChanged: (v) {
+            setState(() {
+              _filteredCities = _cities
+                  .where((c) => c['city']!.toLowerCase().contains(v.toLowerCase()))
+                  .toList();
+              _showCityList = true;
+              if (_selectedCity != null && v != _selectedCity) {
+                _selectedCity = null;
+                _stateCtrl.clear();
+              }
+            });
+          },
+        ),
+        if (_showCityList)
+          Container(
+            constraints: const BoxConstraints(maxHeight: 200),
+            margin: const EdgeInsets.only(top: 2),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: const Color(0xFFD1D5DB)),
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 8, offset: const Offset(0, 4))
+              ],
+            ),
+            child: _filteredCities.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('No cities found',
+                        style: TextStyle(color: Colors.grey, fontSize: 13)))
+                : ListView.builder(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    itemCount: _filteredCities.length,
+                    itemBuilder: (_, i) {
+                      final c = _filteredCities[i];
+                      return InkWell(
+                        onTap: () {
+                          setState(() {
+                            _selectedCity   = c['city'];
+                            _cityCtrl.text  = c['city']!;
+                            _stateCtrl.text = c['state']!;
+                            _showCityList   = false;
+                            _cityError      = false;
+                          });
+                          _cityFocusNode.unfocus();
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 11),
+                          child: Text(c['city']!,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: _selectedCity == c['city']
+                                    ? FontWeight.w700 : FontWeight.normal,
+                                color: _selectedCity == c['city']
+                                    ? AppTheme.violet : const Color(0xFF111827),
+                              )),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+      ],
+    );
+  }
+}
+
+class _PersonalDetailsCard extends StatelessWidget {
+  final User user;
+  const _PersonalDetailsCard(this.user);
+
+  static Map<String, String> _parseAddress(String address) {
+    if (address.isEmpty) return {};
+    final parts = address.split(', ');
+    if (parts.length >= 3 && RegExp(r'^[1-9][0-9]{5}$').hasMatch(parts.last)) {
+      final addrParts = parts.sublist(0, parts.length - 3);
+      return {
+        'addr1': addrParts.isNotEmpty ? addrParts.first : '',
+        'addr2': addrParts.length > 1 ? addrParts.sublist(1).join(', ') : '',
+        'city':  parts[parts.length - 3],
+        'state': parts[parts.length - 2],
+        'pin':   parts.last,
+      };
+    }
+    return {'addr1': address};
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final addr = _parseAddress(user.address);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5E7EB))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Personal Details',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+        const Divider(height: 20),
+        _row('First Name',    user.firstName),
+        _row('Last Name',     user.lastName),
+        _row('Email',         user.email),
+        _row('Phone Number',  user.phoneNumber),
+        if (addr['addr1']?.isNotEmpty ?? false) _row('Address Line 1', addr['addr1']!),
+        if (addr['addr2']?.isNotEmpty ?? false) _row('Address Line 2', addr['addr2']!),
+        if (addr['city']?.isNotEmpty  ?? false) _row('City',           addr['city']!),
+        if (addr['state']?.isNotEmpty ?? false) _row('State',          addr['state']!),
+        if (addr['pin']?.isNotEmpty   ?? false) _row('Pincode',        addr['pin']!),
+      ]),
+    );
+  }
+
+  Widget _row(String label, String value) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+      Text(label,
+          style: const TextStyle(color: Colors.grey, fontSize: 13)),
+      Flexible(child: Text(value,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          textAlign: TextAlign.right,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis)),
+    ]),
   );
 }
 

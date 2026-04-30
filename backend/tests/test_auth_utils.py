@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi import HTTPException
@@ -69,13 +69,13 @@ class TestTokenCreation:
     def test_access_token_expires_in_future(self):
         token = create_access_token({"sub": "uid"})
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        assert payload["exp"] > datetime.utcnow().timestamp()
+        assert payload["exp"] > datetime.now(timezone.utc).timestamp()
 
     def test_custom_expiry_applied(self):
         delta = timedelta(minutes=5)
         token = create_access_token({"sub": "uid"}, expires_delta=delta)
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        expected = (datetime.utcnow() + delta).timestamp()
+        expected = (datetime.now(timezone.utc) + delta).timestamp()
         assert abs(payload["exp"] - expected) < 5  # within 5 seconds
 
 
